@@ -1,6 +1,20 @@
+<p align="center">
+  <img src="./public/header.svg" alt="Flexcil Backup Viewer" width="100%" />
+</p>
+
+<p align="center">
+  <b>A modern, local-first desktop viewer for Flexcil backup files.</b>
+</p>
+
+<p align="center">
+  ⚡ Fast • 🔎 Full-Text Search • 📂 Folder Structure • 🔐 100% Local
+</p>
+
+---
+
 # Flexcil Backup Viewer
 
-A modern, local-first web application for viewing and searching Flexcil backup files on desktop.
+A clean and powerful desktop application to view and search Flexcil backup files on your computer.
 
 > ⚠️ This project is not affiliated with, endorsed by, or connected to Flexcil in any way.
 
@@ -8,70 +22,147 @@ A modern, local-first web application for viewing and searching Flexcil backup f
 
 ## ✨ Features
 
-- 📂 Reads official Flexcil backup ZIP / .flx files
-- 🗂 Reconstructs folder structure from `documents.list`
-- 📄 Extracts embedded PDFs
-- 🔎 Full-text search (real-time, indexed locally)
-- 📑 Jump-to-page support
+- 📂 Rebuilds folder structure from `documents.list`
+- 📄 Extracts PDFs from backup ZIP / `.flx` files
+- 🔎 Real-time full-text search
+- 📑 Jump-to-page navigation
 - 🖼 Thumbnail preview grid
 - 📊 Import progress indicator
 - 💾 IndexedDB local storage
 - 🌙 Modern dark UI
-
-All processing happens **locally in your browser**.  
-No files are uploaded anywhere.
+- 🔐 100% local — no uploads, no cloud interaction
 
 ---
 
-## 🚀 Getting Started
+## 🖼 Screenshots
 
-### 1. Clone the repository
+### 📚 Library View
+<p align="center">
+  <img src="./assets/library.png" width="90%" />
+</p>
+
+Modern folder sidebar with thumbnail grid and metadata overview.
+
+---
+
+### 📄 Document Viewer
+<p align="center">
+  <img src="./assets/viewer.png" width="90%" />
+</p>
+
+Built-in PDF.js viewer with navigation, zoom, and jump-to-page support.
+
+---
+
+### 🔎 Full-Text Search
+<p align="center">
+  <img src="./assets/search.png" width="90%" />
+</p>
+
+Instant search across all indexed documents with live updates.
+
+---
+
+## ⬇️ Download (Windows .exe)
+
+If you don’t want to run the development version, you can download the standalone Windows executable from the **Releases** section.
+
+### Steps:
+
+1. Go to the GitHub **Releases** page.
+2. Download the latest `.exe` file.
+3. Double-click to start the application.
+4. Your browser will open automatically.
+
+No installation required.
+
+---
+
+## 🚀 Getting Started (Development Version)
+
+### 1. Clone repository
 
 ```bash
 git clone https://github.com/janptn/flexcil-backup-viewer.git
 cd flexcil-backup-viewer
-2. Install dependencies
+```
+
+### 2. Install dependencies
+
+```bash
 npm install
-3. Run development server
+```
+
+### 3. Start development server
+
+```bash
 npm run dev
+```
 
 Open the shown local URL in your browser.
 
-📦 How It Works
+---
 
-Download your Flexcil backup from Google Drive.
+## 📦 How To Use
 
-Drag & drop the backup ZIP or .flx files into the app.
+### Importing Documents
 
-The app:
+1. Download your Flexcil backup ZIP from Google Drive.
+2. Drag & drop the ZIP file into the app.
+3. The app automatically:
+   - Extracts PDFs
+   - Rebuilds folder structure
+   - Indexes document text
+   - Stores everything locally in IndexedDB
 
-Extracts PDFs using JSZip
+---
 
-Rebuilds folder structure from documents.list
+### Updating With New Documents
 
-Indexes text using PDF.js
+Whenever you create new documents on your tablet:
 
-Stores everything locally in IndexedDB
+1. Download the latest Flexcil backup ZIP from Google Drive.
+2. Drag & drop it into the app again.
+3. The viewer automatically:
+   - Detects new documents
+   - Skips already imported ones
+   - Updates the library instantly
 
-Instantly search across all documents.
+You can repeat this process anytime.
 
-🔐 Privacy
+No manual cleanup required.
 
-100% local
+---
 
-No cloud sync
+## 🔐 Privacy
 
-No telemetry
+- No telemetry
+- No tracking
+- No cloud sync
+- No external uploads
+- All data stored locally in your browser
 
-No tracking
+You can clear stored data anytime via browser storage settings.
 
-Data stored only in browser IndexedDB
+---
 
-You can clear all stored data anytime by clearing site storage.
+## 💡 Why This Exists
 
-⚖️ Legal Notice
+Flexcil is tablet-first.  
+This tool provides a fast and clean desktop viewing experience without requiring official desktop support.
+
+Built for productivity and open-source collaboration.
+
+---
+
+## ⚖️ Legal Notice
 
 Flexcil is a trademark of its respective owners.
-This project is an independent viewer for user-generated backup files.
 
-It does not modify, bypass, or interact with official Flexcil services.
+This project is an independent viewer for user-generated backup files and does not interact with official Flexcil services.
+
+---
+
+## 📜 License
+
+MIT License © 2026 Jan Pultin

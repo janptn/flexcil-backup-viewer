@@ -1,0 +1,77 @@
+# Flexcil Backup Viewer
+
+A modern, local-first web application for viewing and searching Flexcil backup files on desktop.
+
+> ⚠️ This project is not affiliated with, endorsed by, or connected to Flexcil in any way.
+
+---
+
+## ✨ Features
+
+- 📂 Reads official Flexcil backup ZIP / .flx files
+- 🗂 Reconstructs folder structure from `documents.list`
+- 📄 Extracts embedded PDFs
+- 🔎 Full-text search (real-time, indexed locally)
+- 📑 Jump-to-page support
+- 🖼 Thumbnail preview grid
+- 📊 Import progress indicator
+- 💾 IndexedDB local storage
+- 🌙 Modern dark UI
+
+All processing happens **locally in your browser**.  
+No files are uploaded anywhere.
+
+---
+
+## 🚀 Getting Started
+
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/janptn/flexcil-backup-viewer.git
+cd flexcil-backup-viewer
+2. Install dependencies
+npm install
+3. Run development server
+npm run dev
+
+Open the shown local URL in your browser.
+
+📦 How It Works
+
+Download your Flexcil backup from Google Drive.
+
+Drag & drop the backup ZIP or .flx files into the app.
+
+The app:
+
+Extracts PDFs using JSZip
+
+Rebuilds folder structure from documents.list
+
+Indexes text using PDF.js
+
+Stores everything locally in IndexedDB
+
+Instantly search across all documents.
+
+🔐 Privacy
+
+100% local
+
+No cloud sync
+
+No telemetry
+
+No tracking
+
+Data stored only in browser IndexedDB
+
+You can clear all stored data anytime by clearing site storage.
+
+⚖️ Legal Notice
+
+Flexcil is a trademark of its respective owners.
+This project is an independent viewer for user-generated backup files.
+
+It does not modify, bypass, or interact with official Flexcil services.

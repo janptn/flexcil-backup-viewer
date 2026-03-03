@@ -10,7 +10,7 @@ export function DropzoneOverlay({ active }: { active: boolean }) {
       <div className="rounded-xl bg-card px-6 py-4 shadow-lg">
         <div className="flex items-center gap-3 text-sm font-medium">
           <UploadCloud className="size-5 text-accent" />
-          <span>Drop .flx files to import</span>
+          <span>Drop .flx/.zip files to import</span>
         </div>
       </div>
     </div>

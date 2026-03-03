@@ -32,6 +32,28 @@ npm run dev
 
 Then open the local Vite URL in your browser (usually `http://localhost:5173`).
 
+## Desktop App (EXE)
+
+Run in desktop mode during development:
+
+```bash
+npm run dev:desktop
+```
+
+Build Windows installer + portable EXE:
+
+```bash
+npm run build:exe
+```
+
+Output files are generated in:
+
+```text
+release/
+```
+
+You can share the generated `.exe` (portable) directly with non-technical users.
+
 ## Build
 
 ```bash

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./public/header.svg" alt="Flexcil Backup Viewer" />
+  <img src="/public/header.svg" alt="Flexcil Backup Viewer" />
 </p>
 
 <p align="center">

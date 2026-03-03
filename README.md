@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="/public/header.svg" alt="Flexcil Backup Viewer" />
+  <img src="./puplic/header.svg" width="90%" alt="Flexcil Backup Viewer"/>
 </p>
 
 <p align="center">
@@ -38,7 +38,7 @@ A clean and powerful desktop application to view and search Flexcil backup files
 
 ### 📚 Library View
 <p align="center">
-  <img src="./assets/library.png" width="90%" />
+  <img src="./assets/libary.png" width="90%" />
 </p>
 
 Modern folder sidebar with thumbnail grid and metadata overview.
@@ -56,7 +56,7 @@ Built-in PDF.js viewer with navigation, zoom, and jump-to-page support.
 
 ### 🔎 Full-Text Search
 <p align="center">
-  <img src="./assets/search.png" width="90%" />
+  <img src="./assets/search.png" width="30%" />
 </p>
 
 Instant search across all indexed documents with live updates.

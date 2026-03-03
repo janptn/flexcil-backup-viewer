@@ -2,16 +2,14 @@
   "name": "flexcil-local-viewer",
   "private": true,
   "version": "1.0.0",
-  "description": "Local Flexcil backup PDF viewer desktop app",
+  "description": "Local Flexcil backup PDF viewer browser launcher",
   "author": "Jan",
-  "main": "electron/main.cjs",
+  "main": "launcher/server.cjs",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:desktop": "concurrently -k \"vite\" \"wait-on tcp:5173 && electron .\"",
-    "start:desktop": "electron .",
     "build": "tsc -b && vite build",
-    "build:exe": "npm run build && electron-builder --win nsis portable",
+    "build:exe": "npm run build && pkg launcher/server.cjs --targets node18-win-x64 --output release/Flexcil-Local-Viewer-Browser-Launcher.exe",
     "lint": "eslint .",
     "preview": "vite preview"
   },
@@ -34,48 +32,20 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.27",
-    "concurrently": "^9.2.1",
-    "electron": "^34.3.0",
-    "electron-builder": "^26.0.12",
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
     "globals": "^16.5.0",
     "postcss": "^8.5.8",
+    "pkg": "^5.8.1",
     "tailwindcss": "^3.4.17",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.48.0",
-    "vite": "^5.4.11",
-    "wait-on": "^8.0.3"
+    "vite": "^5.4.11"
   },
-  "build": {
-    "appId": "com.flexcil.localviewer",
-    "productName": "Flexcil Local Viewer",
-    "directories": {
-      "output": "release"
-    },
-    "files": [
-      "dist/**/*",
-      "electron/**/*",
-      "package.json"
-    ],
-    "extraMetadata": {
-      "main": "electron/main.cjs"
-    },
-    "win": {
-      "target": [
-        "nsis",
-        "portable"
-      ]
-    },
-    "nsis": {
-      "artifactName": "${productName}-Setup-${version}-${arch}.${ext}",
-      "oneClick": false,
-      "perMachine": false,
-      "allowToChangeInstallationDirectory": true
-    },
-    "portable": {
-      "artifactName": "${productName}-Portable-${version}-${arch}.${ext}"
-    }
+  "pkg": {
+    "assets": [
+      "dist/**/*"
+    ]
   }
 }

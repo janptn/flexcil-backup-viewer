@@ -1,0 +1,47 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 248 250 252;
+    --foreground: 15 23 42;
+    --card: 255 255 255;
+    --muted: 241 245 249;
+    --muted-foreground: 71 85 105;
+    --accent: 99 102 241;
+    --border: 226 232 240;
+  }
+
+  .dark {
+    --background: 3 7 18;
+    --foreground: 226 232 240;
+    --card: 15 23 42;
+    --muted: 30 41 59;
+    --muted-foreground: 148 163 184;
+    --accent: 129 140 248;
+    --border: 51 65 85;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html,
+  body,
+  #root {
+    @apply h-full;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  }
+}
+
+.pdfViewer .page {
+  margin: 0.75rem auto;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.12);
+}

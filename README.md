@@ -14,7 +14,9 @@
 
 # Flexcil Backup Viewer
 
-A clean and powerful desktop application to view and search Flexcil backup files on your computer.
+A modern, local-first desktop viewer for Flexcil backup files.
+
+The application allows you to open official Flexcil backup archives on your computer, browse documents, search their contents and display handwritten annotations directly inside the viewer.
 
 > ⚠️ This project is not affiliated with, endorsed by, or connected to Flexcil in any way.
 
@@ -23,14 +25,15 @@ A clean and powerful desktop application to view and search Flexcil backup files
 ## ✨ Features
 
 - 📂 Rebuilds folder structure from `documents.list`
-- 📄 Extracts PDFs from backup ZIP / `.flx` files
-- 🔎 Real-time full-text search
+- 📄 Extracts PDFs from Flexcil backup ZIP / `.flx` files
+- ✍️ Displays Flexcil ink annotations (handwritten notes)
+- 🔎 Real-time full-text search across documents
 - 📑 Jump-to-page navigation
 - 🖼 Thumbnail preview grid
 - 📊 Import progress indicator
 - 💾 IndexedDB local storage
 - 🌙 Modern dark UI
-- 🔐 100% local — no uploads, no cloud interaction
+- 🔐 100% local – no uploads, no cloud interaction
 
 ---
 

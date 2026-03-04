@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
-import { ExternalLink, FileText } from 'lucide-react'
+import { ExternalLink, FileText, PenLine } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { formatBytes, formatDate } from '../lib/format'
 import type { DocumentRecord } from '../types'
 
 export function DocumentCard({ document }: { document: DocumentRecord }) {
   const [thumbnailUrl, setThumbnailUrl] = useState<string | undefined>()
+  const hasDrawings =
+    Object.values(document.inkDrawingsByPageKey ?? {}).some((strokes) => strokes.length > 0)
 
   useEffect(() => {
     if (!document.thumbnailBlob) {
@@ -57,6 +59,16 @@ export function DocumentCard({ document }: { document: DocumentRecord }) {
       >
         <ExternalLink className="size-4" />
       </Link>
+
+      {hasDrawings && (
+        <div
+          className="absolute left-2 top-2 inline-flex h-8 items-center gap-1 rounded-md border border-border bg-card/90 px-2 text-xs text-muted-foreground shadow-sm"
+          title="Has drawings"
+          aria-label="Document has drawings"
+        >
+          <PenLine className="size-3.5" />
+        </div>
+      )}
     </div>
   )
 }

@@ -1,5 +1,6 @@
 import JSZip from 'jszip'
 import { sha256 } from './hash'
+import { parseFlexcilDrawings } from './flexcilInk'
 import type { DocumentRecord, UnknownMeta } from '../types'
 import type { DocumentsListMapping } from './documentsList'
 
@@ -18,6 +19,13 @@ const FOLDER_KEYS = new Set([
 ])
 const TITLE_KEYS = ['title', 'name', 'documentTitle']
 const DATE_KEYS = ['createdAt', 'updatedAt', 'date', 'modifiedAt', 'created', 'timestamp']
+
+interface PageIndexEntry {
+  attachmentPage?: {
+    index?: number
+  }
+  key?: string
+}
 
 function safeJsonParse(content: string): unknown {
   try {
@@ -147,6 +155,66 @@ function pickThumbnailEntry(zip: JSZip): JSZip.JSZipObject | undefined {
   return scored[0]?.entry
 }
 
+function extractPageKeyMappings(pagesIndexRaw: unknown): Record<string, string> {
+  if (!Array.isArray(pagesIndexRaw)) {
+    return {}
+  }
+
+  const mappings: Record<string, string> = {}
+
+  for (const item of pagesIndexRaw) {
+    if (!item || typeof item !== 'object') {
+      continue
+    }
+
+    const entry = item as PageIndexEntry
+    const pageIndex = entry.attachmentPage?.index
+    const pageKey = typeof entry.key === 'string' ? entry.key.trim() : ''
+
+    if (!Number.isFinite(pageIndex) || pageKey.length === 0) {
+      continue
+    }
+
+    const oneBasedPageNumber = (pageIndex as number) + 1
+    mappings[String(oneBasedPageNumber)] = pageKey
+  }
+
+  return mappings
+}
+
+function findDrawingsEntry(zip: JSZip, pageKey: string): JSZip.JSZipObject | undefined {
+  const suffix = `objects/${pageKey}.drawings`.toLowerCase()
+  return Object.values(zip.files).find((entry) => !entry.dir && entry.name.toLowerCase().endsWith(suffix))
+}
+
+async function extractInkDrawingsByPageKey(
+  zip: JSZip,
+  pageKeyMappings: Record<string, string>,
+): Promise<Record<string, ReturnType<typeof parseFlexcilDrawings>>> {
+  const uniquePageKeys = Array.from(new Set(Object.values(pageKeyMappings)))
+  const drawingsByPageKey: Record<string, ReturnType<typeof parseFlexcilDrawings>> = {}
+
+  for (const pageKey of uniquePageKeys) {
+    const drawingsEntry = findDrawingsEntry(zip, pageKey)
+    if (!drawingsEntry) {
+      continue
+    }
+
+    try {
+      const raw = await drawingsEntry.async('string')
+      const parsed = safeJsonParse(raw)
+      const strokes = parseFlexcilDrawings(parsed)
+      if (strokes.length > 0) {
+        drawingsByPageKey[pageKey] = strokes
+      }
+    } catch {
+      continue
+    }
+  }
+
+  return drawingsByPageKey
+}
+
 export async function parseFlexelFiles(
   files: File[],
   documentsListMappings?: Map<string, DocumentsListMapping>,
@@ -183,6 +251,9 @@ export async function parseFlexelFiles(
     }
 
     const meta = createMetaObject(metaItems)
+    const pagesIndexRaw = metaItems.find(([name]) => name.toLowerCase().endsWith('pages.index'))?.[1]
+    const inkPageKeys = extractPageKeyMappings(pagesIndexRaw)
+    const inkDrawingsByPageKey = await extractInkDrawingsByPageKey(zip, inkPageKeys)
     const thumbnailEntry = pickThumbnailEntry(zip)
     const thumbnailBytes = thumbnailEntry ? await thumbnailEntry.async('uint8array') : undefined
     const titleFromMeta = searchFirstString(meta, TITLE_KEYS)
@@ -222,6 +293,9 @@ export async function parseFlexelFiles(
           : undefined,
         meta,
         folderPath: mapping?.folderPath?.length ? mapping.folderPath : folderPath,
+        inkPageKeys: Object.keys(inkPageKeys).length > 0 ? inkPageKeys : undefined,
+        inkDrawingsByPageKey:
+          Object.keys(inkDrawingsByPageKey).length > 0 ? inkDrawingsByPageKey : undefined,
       })
     }
   }

@@ -1,0 +1,97 @@
+const path = require('path')
+const fs = require('fs')
+const os = require('os')
+const { execFile } = require('child_process')
+
+function cleanupDirectory(dirPath) {
+  if (fs.existsSync(dirPath)) {
+    fs.rmSync(dirPath, { recursive: true, force: true })
+  }
+}
+
+function resolveResourceHackerPath(projectRoot) {
+  const resourceHackerPath = path.join(projectRoot, 'node_modules', 'node-resourcehacker', 'ResourceHacker.exe')
+  if (!fs.existsSync(resourceHackerPath)) {
+    throw new Error(`ResourceHacker.exe not found at ${resourceHackerPath}. Please run npm install first.`)
+  }
+  return resourceHackerPath
+}
+
+function runResourceHacker(resourceHackerPath, exePath, iconPath, resourceName) {
+  return new Promise((resolve, reject) => {
+    const args = [
+      '-open',
+      exePath,
+      '-save',
+      exePath,
+      '-action',
+      'addoverwrite',
+      '-res',
+      iconPath,
+      '-mask',
+      `ICONGROUP,${resourceName},`,
+    ]
+    execFile(resourceHackerPath, args, (error, stdout, stderr) => {
+      if (error) {
+        reject(new Error(stderr || stdout || error.message))
+        return
+      }
+      resolve()
+    })
+  })
+}
+
+async function run() {
+  const projectRoot = path.join(__dirname, '..')
+  const exePath = path.join(projectRoot, 'release', 'Flexcil-Local-Viewer-Browser-Launcher.exe')
+  const iconPath = path.join(projectRoot, 'launcher', 'logo.ico')
+
+  if (!fs.existsSync(exePath)) {
+    throw new Error(`EXE not found: ${exePath}`)
+  }
+
+  if (!fs.existsSync(iconPath)) {
+    throw new Error(`Icon not found: ${iconPath}`)
+  }
+
+  const tempDir = path.join(os.tmpdir(), 'flexcil-rh')
+  const tempExePath = path.join(tempDir, 'launcher.exe')
+  const tempIconPath = path.join(tempDir, 'logo.ico')
+  const tempResourceHackerPath = path.join(tempDir, 'ResourceHacker.exe')
+
+  cleanupDirectory(tempDir)
+  fs.mkdirSync(tempDir, { recursive: true })
+  fs.copyFileSync(exePath, tempExePath)
+  fs.copyFileSync(iconPath, tempIconPath)
+  fs.copyFileSync(resolveResourceHackerPath(projectRoot), tempResourceHackerPath)
+
+  const candidates = ['1', 'MAINICON', 'IDR_MAINFRAME']
+  let selectedResourceName = null
+  let lastError = null
+
+  try {
+    for (const candidate of candidates) {
+      try {
+        await runResourceHacker(tempResourceHackerPath, tempExePath, tempIconPath, candidate)
+        selectedResourceName = candidate
+        break
+      } catch (error) {
+        lastError = error
+      }
+    }
+
+    if (!selectedResourceName) {
+      throw lastError || new Error('Failed to update EXE icon.')
+    }
+
+    fs.copyFileSync(tempExePath, exePath)
+    console.log(`EXE icon updated using resource name ${selectedResourceName}.`)
+  } finally {
+    cleanupDirectory(tempDir)
+  }
+}
+
+run().catch((error) => {
+  console.error(error)
+  process.exit(1)
+})

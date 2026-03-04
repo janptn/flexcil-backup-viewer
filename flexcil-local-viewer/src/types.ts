@@ -1,5 +1,20 @@
 export type UnknownMeta = Record<string, unknown>
 
+export interface FlexcilInkPoint {
+  xNorm: number
+  yNorm: number
+  pressure?: number
+}
+
+export interface FlexcilInkStroke {
+  points: FlexcilInkPoint[]
+  pointsAbsolute?: FlexcilInkPoint[]
+  pointsCumulative?: FlexcilInkPoint[]
+  strokeStyle: string
+  lineWidth: number
+  rotate?: number
+}
+
 export interface DocumentRecord {
   id: string
   title: string
@@ -13,6 +28,8 @@ export interface DocumentRecord {
   meta?: UnknownMeta
   folderPath?: string[]
   fullText?: string
+  inkPageKeys?: Record<string, string>
+  inkDrawingsByPageKey?: Record<string, FlexcilInkStroke[]>
 }
 
 export type CollectionFilter =

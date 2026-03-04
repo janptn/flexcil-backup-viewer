@@ -22,18 +22,26 @@ const MIME_TYPES = {
 }
 
 function resolveDistPath() {
-  const packaged = path.join(__dirname, '..', 'dist')
+  const packagedSnapshot = path.join(__dirname, '..', 'dist')
   const local = path.join(process.cwd(), 'dist')
 
-  if (fs.existsSync(path.join(packaged, 'index.html'))) {
-    return packaged
+  if (process.pkg) {
+    if (fs.existsSync(path.join(packagedSnapshot, 'index.html'))) {
+      return packagedSnapshot
+    }
+
+    throw new Error('Could not find bundled dist/index.html inside executable. Please rebuild the launcher with npm run build:exe.')
   }
 
   if (fs.existsSync(path.join(local, 'index.html'))) {
     return local
   }
 
-  throw new Error('Could not find dist/index.html. Please run build:exe from project root.')
+  if (fs.existsSync(path.join(packagedSnapshot, 'index.html'))) {
+    return packagedSnapshot
+  }
+
+  throw new Error('Could not find dist/index.html. Please run npm run build first.')
 }
 
 function openBrowser(url) {

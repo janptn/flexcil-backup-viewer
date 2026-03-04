@@ -32,6 +32,17 @@ const dbPromise = openDB<FlexcilDb>(DB_NAME, DB_VERSION, {
   },
 })
 
+function hasKeys(value: Record<string, unknown> | undefined): boolean {
+  return Boolean(value && Object.keys(value).length > 0)
+}
+
+function stableJson(value: unknown): string {
+  if (value === undefined) {
+    return ''
+  }
+  return JSON.stringify(value)
+}
+
 export async function getAllDocuments(): Promise<DocumentRecord[]> {
   const db = await dbPromise
   const docs = await db.getAll(STORE_DOCUMENTS)
@@ -68,6 +79,12 @@ export async function saveDocumentRecords(
         : incoming.fullText
     const nextTitle =
       existing.title === existing.id && incoming.title !== incoming.id ? incoming.title : existing.title
+    const nextInkPageKeys = hasKeys(incoming.inkPageKeys)
+      ? incoming.inkPageKeys
+      : existing.inkPageKeys
+    const nextInkDrawings = hasKeys(incoming.inkDrawingsByPageKey)
+      ? incoming.inkDrawingsByPageKey
+      : existing.inkDrawingsByPageKey
 
     return {
       ...existing,
@@ -78,6 +95,8 @@ export async function saveDocumentRecords(
       meta: nextMeta,
       folderPath: nextFolder,
       fullText: nextFullText,
+      inkPageKeys: nextInkPageKeys,
+      inkDrawingsByPageKey: nextInkDrawings,
     }
   }
 
@@ -90,6 +109,8 @@ export async function saveDocumentRecords(
       hasMeta: Boolean(left.meta),
       hasThumbnail: Boolean(left.thumbnailBlob),
       hasFullText: Boolean(left.fullText && left.fullText.trim().length > 0),
+      inkPageKeys: stableJson(left.inkPageKeys),
+      inkDrawingsByPageKey: stableJson(left.inkDrawingsByPageKey),
     }) ===
       JSON.stringify({
         title: right.title,
@@ -99,6 +120,8 @@ export async function saveDocumentRecords(
         hasMeta: Boolean(right.meta),
         hasThumbnail: Boolean(right.thumbnailBlob),
         hasFullText: Boolean(right.fullText && right.fullText.trim().length > 0),
+        inkPageKeys: stableJson(right.inkPageKeys),
+        inkDrawingsByPageKey: stableJson(right.inkDrawingsByPageKey),
       })
   }
 

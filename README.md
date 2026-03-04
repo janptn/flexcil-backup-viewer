@@ -37,6 +37,15 @@ The application allows you to open official Flexcil backup archives on your comp
 
 ---
 
+## ✍️ Annotation Rendering
+
+The viewer is capable of displaying Flexcil handwritten annotations directly on top of the original PDF pages.
+
+This includes:
+- pen strokes
+- handwriting
+- pressure-based ink rendering
+
 ## 🖼 Screenshots
 
 ### 📚 Library View

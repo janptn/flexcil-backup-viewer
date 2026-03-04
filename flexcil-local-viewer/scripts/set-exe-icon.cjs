@@ -2,6 +2,7 @@ const path = require('path')
 const fs = require('fs')
 const os = require('os')
 const { execFile } = require('child_process')
+const rcedit = require('rcedit')
 
 function cleanupDirectory(dirPath) {
   if (fs.existsSync(dirPath)) {
@@ -43,16 +44,28 @@ function runResourceHacker(resourceHackerPath, exePath, iconPath, resourceName) 
 
 async function run() {
   const projectRoot = path.join(__dirname, '..')
-  const exePath = path.join(projectRoot, 'release', 'Flexcil-Local-Viewer-Browser-Launcher.exe')
+  const exeCandidates = [
+    path.join(projectRoot, 'release', 'Flexcil-Local-Viewer.exe'),
+    path.join(projectRoot, 'release', 'Flexcil-Local-Viewer-Browser-Launcher.exe'),
+  ]
   const iconPath = path.join(projectRoot, 'launcher', 'logo.ico')
-
-  if (!fs.existsSync(exePath)) {
-    throw new Error(`EXE not found: ${exePath}`)
-  }
 
   if (!fs.existsSync(iconPath)) {
     throw new Error(`Icon not found: ${iconPath}`)
   }
+
+  const existingExePaths = exeCandidates.filter((candidate) => fs.existsSync(candidate))
+  if (existingExePaths.length === 0) {
+    throw new Error(`No EXE found in release folder. Checked: ${exeCandidates.join(', ')}`)
+  }
+
+  for (const exePath of existingExePaths) {
+    await setIconForExe(projectRoot, exePath, iconPath)
+  }
+}
+
+async function setIconForExe(projectRoot, exePath, iconPath) {
+  console.log(`Stamping icon for ${path.basename(exePath)}...`)
 
   const tempDir = path.join(os.tmpdir(), 'flexcil-rh')
   const tempExePath = path.join(tempDir, 'launcher.exe')
@@ -64,6 +77,14 @@ async function run() {
   fs.copyFileSync(exePath, tempExePath)
   fs.copyFileSync(iconPath, tempIconPath)
   fs.copyFileSync(resolveResourceHackerPath(projectRoot), tempResourceHackerPath)
+
+  try {
+    await rcedit(exePath, { icon: iconPath })
+    console.log(`EXE icon updated using rcedit: ${path.basename(exePath)}`)
+    return
+  } catch (rceditError) {
+    console.warn(`rcedit icon update failed, trying ResourceHacker fallback: ${rceditError.message}`)
+  }
 
   const candidates = ['1', 'MAINICON', 'IDR_MAINFRAME']
   let selectedResourceName = null
@@ -85,7 +106,7 @@ async function run() {
     }
 
     fs.copyFileSync(tempExePath, exePath)
-    console.log(`EXE icon updated using resource name ${selectedResourceName}.`)
+    console.log(`EXE icon updated using ResourceHacker (${selectedResourceName}): ${path.basename(exePath)}`)
   } finally {
     cleanupDirectory(tempDir)
   }

@@ -12,7 +12,9 @@
     "build": "tsc -b && vite build",
     "prepare:icons": "node scripts/prepare-icons.cjs",
     "set:exe:icon": "node scripts/set-exe-icon.cjs",
-    "build:exe": "npm run prepare:icons && npm run build && pkg package.json --targets node18-win-x64 --output release/Flexcil-Local-Viewer-Browser-Launcher.exe",
+    "build:server:exe": "pkg package.json --targets node18-win-x64 --output release/Flexcil-Local-Viewer-Server.exe",
+    "build:gui:exe": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-gui-wrapper.ps1",
+    "build:exe": "npm run prepare:icons && npm run build && npm run build:server:exe && npm run build:gui:exe && npm run set:exe:icon",
     "lint": "eslint .",
     "preview": "vite preview"
   },
@@ -53,7 +55,8 @@
   },
   "pkg": {
     "assets": [
-      "dist/**/*"
+      "dist/**/*",
+      "launcher/logo.ico"
     ]
   }
 }

@@ -3,7 +3,7 @@ import JSZip from 'jszip'
 import { applyDocumentsListMappings, saveDocumentRecords } from '../lib/db'
 import { parseDocumentsListMappings } from '../lib/documentsList'
 import { parseFlexelFiles } from '../lib/flexelImport'
-import { extractPdfFullText } from '../lib/pdfText'
+import { extractPdfTextInfo } from '../lib/pdfText'
 import type { ImportProgress, ImportSummary } from '../types'
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
@@ -113,19 +113,22 @@ export function useFlexelImport(onImported: () => Promise<void>) {
             })
 
             try {
-              const fullText = await withTimeout(
-                extractPdfFullText(record.pdfBlob),
+              const pdfTextInfo = await withTimeout(
+                extractPdfTextInfo(record.pdfBlob),
                 12000,
                 'Full-text indexing took too long.',
               )
               nextRecords[index] = {
                 ...record,
-                fullText,
+                fullText: pdfTextInfo.fullText,
+                pageCount: pdfTextInfo.pageCount,
+                createdAt: pdfTextInfo.createdAt ?? record.createdAt,
               }
             } catch {
               nextRecords[index] = {
                 ...record,
                 fullText: '',
+                pageCount: record.pageCount,
               }
             }
           }

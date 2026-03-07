@@ -11,7 +11,6 @@ import {
   Search,
   SlidersHorizontal,
 } from 'lucide-react'
-import { Link } from 'react-router-dom'
 import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import {
   EventBus,
@@ -20,24 +19,31 @@ import {
   PDFViewer as PdfJsViewer,
 } from 'pdfjs-dist/legacy/web/pdf_viewer.mjs'
 import workerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
-import type { DocumentRecord } from '../types'
-import type { FlexcilInkStroke } from '../types'
+import type { DocumentRecord, FlexcilInkStroke, PdfSearchHit, TabViewState } from '../types'
 
 GlobalWorkerOptions.workerSrc = workerUrl
 
 interface PdfViewerProps {
   document: DocumentRecord
+  showToolbar?: boolean
+  showBackButton?: boolean
+  showSearchInput?: boolean
+  showSearchSidebar?: boolean
+  viewportMode?: 'screen' | 'fill'
+  externalSearchQuery?: string
+  onExternalSearchQueryChange?: (query: string) => void
+  externalSelectedMatchIndex?: number
+  onExternalSelectedMatchIndexChange?: (index: number) => void
+  onSearchHitsChange?: (hits: PdfSearchHit[]) => void
+  initialViewState?: Partial<TabViewState>
+  onViewStateChange?: (state: TabViewState) => void
 }
 
 const MIN_SCALE = 0.5
 const MAX_SCALE = 4
 const ZOOM_STEP = 0.2
 
-interface SearchHit {
-  id: string
-  pageNumber: number
-  snippet: string
-}
+type SearchHit = PdfSearchHit
 
 interface TextContentItemLike {
   str?: string
@@ -226,7 +232,21 @@ function strokeWidthFromPressure(
   return minW + curved * (maxW - minW)
 }
 
-export function PdfViewer({ document }: PdfViewerProps) {
+export function PdfViewer({
+  document,
+  showToolbar = true,
+  showBackButton = true,
+  showSearchInput = true,
+  showSearchSidebar = true,
+  viewportMode = 'screen',
+  externalSearchQuery,
+  onExternalSearchQueryChange,
+  externalSelectedMatchIndex,
+  onExternalSelectedMatchIndexChange,
+  onSearchHitsChange,
+  initialViewState,
+  onViewStateChange,
+}: PdfViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const viewerRef = useRef<HTMLDivElement>(null)
   const viewerInstanceRef = useRef<PdfJsViewer | null>(null)
@@ -237,8 +257,9 @@ export function PdfViewer({ document }: PdfViewerProps) {
   const [currentPage, setCurrentPage] = useState(1)
   const [scalePercent, setScalePercent] = useState(100)
   const [pageInput, setPageInput] = useState('1')
-  const [searchQuery, setSearchQuery] = useState('')
+  const [internalSearchQuery, setInternalSearchQuery] = useState('')
   const [searchHits, setSearchHits] = useState<SearchHit[]>([])
+  const [internalSelectedMatchIndex, setInternalSelectedMatchIndex] = useState(0)
   const [isSearching, setIsSearching] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -266,7 +287,39 @@ export function PdfViewer({ document }: PdfViewerProps) {
   const [speedSensitivity, setSpeedSensitivity] = useState(20)
   const [lockStrokeWidthOnZoom, setLockStrokeWidthOnZoom] = useState(true)
 
+  const searchQuery = externalSearchQuery ?? internalSearchQuery
+  const selectedMatchIndex = externalSelectedMatchIndex ?? internalSelectedMatchIndex
+
+  const setSearchQuery = useCallback(
+    (value: string) => {
+      if (externalSearchQuery === undefined) {
+        setInternalSearchQuery(value)
+      }
+      onExternalSearchQueryChange?.(value)
+    },
+    [externalSearchQuery, onExternalSearchQueryChange],
+  )
+
+  const setSelectedMatchIndex = useCallback(
+    (value: number) => {
+      if (externalSelectedMatchIndex === undefined) {
+        setInternalSelectedMatchIndex(value)
+      }
+      onExternalSelectedMatchIndexChange?.(value)
+    },
+    [externalSelectedMatchIndex, onExternalSelectedMatchIndexChange],
+  )
+
   const fileName = useMemo(() => `${document.title || document.id}.pdf`, [document.id, document.title])
+
+  useEffect(() => {
+    if (externalSearchQuery === undefined) {
+      setInternalSearchQuery('')
+    }
+    if (externalSelectedMatchIndex === undefined) {
+      setInternalSelectedMatchIndex(0)
+    }
+  }, [document.id, externalSearchQuery, externalSelectedMatchIndex])
 
   useEffect(() => {
     const container = containerRef.current
@@ -337,10 +390,49 @@ export function PdfViewer({ document }: PdfViewerProps) {
         findController.setDocument(pdfDocument)
         pdfDocumentRef.current = pdfDocument
         setPagesCount(pdfDocument.numPages)
-        setCurrentPage(1)
-        setPageInput('1')
-        pdfViewer.currentScaleValue = 'page-width'
-        setScalePercent(Math.round(pdfViewer.currentScale * 100))
+
+        const initialPage = initialViewState?.currentPage
+        const initialZoomPercent = initialViewState?.zoomPercent
+        const initialScrollPosition = initialViewState?.scrollPosition
+
+        const applyInitialView = () => {
+          try {
+            if (Number.isFinite(initialZoomPercent) && initialZoomPercent) {
+              const nextScale = Math.max(MIN_SCALE, Math.min(initialZoomPercent / 100, MAX_SCALE))
+              pdfViewer.currentScale = nextScale
+              setScalePercent(Math.round(nextScale * 100))
+            } else {
+              pdfViewer.currentScaleValue = 'page-width'
+              setScalePercent(Math.round(pdfViewer.currentScale * 100))
+            }
+
+            const desiredPage =
+              Number.isFinite(initialPage) && initialPage
+                ? Math.max(1, Math.min(initialPage, pdfDocument.numPages))
+                : 1
+            pdfViewer.currentPageNumber = desiredPage
+            setCurrentPage(desiredPage)
+            setPageInput(String(desiredPage))
+
+            window.requestAnimationFrame(() => {
+              if (!containerRef.current) {
+                return
+              }
+              const nextScroll =
+                Number.isFinite(initialScrollPosition) && initialScrollPosition
+                  ? Math.max(0, initialScrollPosition)
+                  : 0
+              containerRef.current.scrollTop = nextScroll
+            })
+          } catch {
+            pdfViewer.currentScaleValue = 'page-width'
+            setScalePercent(Math.round(pdfViewer.currentScale * 100))
+            setCurrentPage(1)
+            setPageInput('1')
+          }
+        }
+
+        window.requestAnimationFrame(applyInitialView)
       } catch (loadError) {
         if (isMounted) {
           const message = loadError instanceof Error ? loadError.message : 'Unknown loading error'
@@ -363,11 +455,11 @@ export function PdfViewer({ document }: PdfViewerProps) {
       eventBusRef.current = null
       pdfDocumentRef.current = null
     }
-  }, [document.pdfBlob])
+  }, [document.id, document.pdfBlob])
 
   useEffect(() => {
     const eventBus = eventBusRef.current
-    if (!eventBus) {
+    if (!eventBus || loading || pagesCount <= 0) {
       return
     }
 
@@ -383,7 +475,7 @@ export function PdfViewer({ document }: PdfViewerProps) {
       findPrevious: false,
       matchDiacritics: false,
     })
-  }, [searchQuery])
+  }, [loading, pagesCount, searchQuery])
 
   const resolvePageKey = useCallback(
     (pageNumber: number): string | undefined => {
@@ -825,6 +917,33 @@ export function PdfViewer({ document }: PdfViewerProps) {
     }
   }, [searchQuery])
 
+  useEffect(() => {
+    onSearchHitsChange?.(searchHits)
+  }, [onSearchHitsChange, searchHits])
+
+  useEffect(() => {
+    const query = searchQuery.trim()
+    if (!query || searchHits.length === 0) {
+      return
+    }
+
+    const safeIndex = Math.max(0, Math.min(selectedMatchIndex, searchHits.length - 1))
+    if (safeIndex !== selectedMatchIndex) {
+      setSelectedMatchIndex(safeIndex)
+      return
+    }
+
+    const hit = searchHits[safeIndex]
+    if (!hit) {
+      return
+    }
+
+    const viewer = viewerInstanceRef.current
+    if (viewer) {
+      viewer.currentPageNumber = hit.pageNumber
+    }
+  }, [searchHits, searchQuery, selectedMatchIndex, setSelectedMatchIndex])
+
   const goToPage = useCallback((nextPage: number) => {
     const viewer = viewerInstanceRef.current
     if (!viewer || pagesCount === 0) {
@@ -836,6 +955,38 @@ export function PdfViewer({ document }: PdfViewerProps) {
     setCurrentPage(safePage)
     setPageInput(String(safePage))
   }, [pagesCount])
+
+  const emitViewState = useCallback(() => {
+    if (!onViewStateChange) {
+      return
+    }
+
+    onViewStateChange({
+      currentPage,
+      zoomPercent: scalePercent,
+      scrollPosition: containerRef.current?.scrollTop ?? 0,
+    })
+  }, [currentPage, onViewStateChange, scalePercent])
+
+  useEffect(() => {
+    emitViewState()
+  }, [emitViewState])
+
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container || !onViewStateChange) {
+      return
+    }
+
+    const onScroll = () => {
+      emitViewState()
+    }
+
+    container.addEventListener('scroll', onScroll, { passive: true })
+    return () => {
+      container.removeEventListener('scroll', onScroll)
+    }
+  }, [emitViewState, onViewStateChange])
 
   const changeScale = useCallback((nextScale: number) => {
     const viewer = viewerInstanceRef.current
@@ -857,6 +1008,10 @@ export function PdfViewer({ document }: PdfViewerProps) {
   )
 
   useEffect(() => {
+    if (!showBackButton) {
+      return
+    }
+
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === '+') {
         event.preventDefault()
@@ -878,7 +1033,7 @@ export function PdfViewer({ document }: PdfViewerProps) {
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [currentPage, goToPage, zoomIn, zoomOut])
+  }, [currentPage, goToPage, showBackButton, zoomIn, zoomOut])
 
   const fitWidth = () => {
     const viewer = viewerInstanceRef.current
@@ -903,18 +1058,26 @@ export function PdfViewer({ document }: PdfViewerProps) {
     URL.revokeObjectURL(url)
   }
 
-  return (
-    <div className="flex h-screen flex-col bg-background">
-      <header className="flex flex-wrap items-center gap-2 border-b border-border bg-card px-3 py-2">
-        <Link
-          to="/"
-          className="inline-flex h-9 items-center gap-2 rounded-lg border border-border px-3 text-sm hover:bg-muted"
-        >
-          <ArrowLeft className="size-4" />
-          Back
-        </Link>
+  const rootHeightClass = viewportMode === 'fill' ? 'h-full' : 'h-screen'
 
-        <div className="mx-2 h-5 w-px bg-border" />
+  return (
+    <div className={`flex min-h-0 ${rootHeightClass} flex-col bg-background`}>
+      {showToolbar && <header className="flex flex-wrap items-center gap-2 border-b border-border bg-card px-3 py-2">
+        {showBackButton && (
+          <>
+            <button
+              type="button"
+              onClick={() => {
+                window.location.assign('/')
+              }}
+              className="inline-flex h-9 items-center gap-2 rounded-lg border border-border px-3 text-sm hover:bg-muted"
+            >
+              <ArrowLeft className="size-4" />
+              Library
+            </button>
+            <div className="mx-2 h-5 w-px bg-border" />
+          </>
+        )}
 
         <button
           type="button"
@@ -994,15 +1157,17 @@ export function PdfViewer({ document }: PdfViewerProps) {
           Fit Page
         </button>
 
-        <div className="relative ml-2 w-full min-w-[220px] max-w-sm">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <input
-            value={searchQuery}
-            onChange={(event) => setSearchQuery(event.target.value)}
-            placeholder="Search in document…"
-            className="h-9 w-full rounded-lg border border-border bg-background pl-8 pr-2 text-sm"
-          />
-        </div>
+        {showSearchInput && (
+          <div className="relative ml-2 w-full min-w-[220px] max-w-sm">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="Search in document…"
+              className="h-9 w-full rounded-lg border border-border bg-background pl-8 pr-2 text-sm"
+            />
+          </div>
+        )}
 
         <button
           type="button"
@@ -1031,26 +1196,29 @@ export function PdfViewer({ document }: PdfViewerProps) {
           <SlidersHorizontal className="size-4" />
           Ink Debug
         </button>
-      </header>
+      </header>}
 
       <div className="min-h-0 flex flex-1 bg-slate-900/10">
-        {searchQuery.trim().length > 0 && (
+        {showSearchSidebar && searchQuery.trim().length > 0 && (
           <aside className="w-80 border-r border-border bg-card/95 p-3">
             <div className="mb-2 flex items-center justify-between">
               <p className="text-sm font-semibold">Matches</p>
               <p className="text-xs text-muted-foreground">{searchHits.length}</p>
             </div>
 
-            <div className="max-h-[calc(100vh-170px)] space-y-1 overflow-auto pr-1">
+            <div className="max-h-full space-y-1 overflow-auto pr-1">
               {isSearching && <p className="text-xs text-muted-foreground">Searching…</p>}
               {!isSearching && searchHits.length === 0 && (
                 <p className="text-xs text-muted-foreground">No matches in this document.</p>
               )}
-              {searchHits.map((hit) => (
+              {searchHits.map((hit, index) => (
                 <button
                   key={hit.id}
                   type="button"
-                  onClick={() => goToPage(hit.pageNumber)}
+                  onClick={() => {
+                    setSelectedMatchIndex(index)
+                    goToPage(hit.pageNumber)
+                  }}
                   className="w-full rounded-lg border border-border px-2 py-2 text-left hover:bg-muted"
                 >
                   <p className="mb-1 text-xs font-semibold text-accent">Page {hit.pageNumber}</p>

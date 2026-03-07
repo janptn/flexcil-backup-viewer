@@ -9,7 +9,7 @@ export function LibraryGrid({ documents }: LibraryGridProps) {
   if (documents.length === 0) {
     return (
       <div className="rounded-2xl border border-dashed border-border bg-card p-10 text-center text-sm text-muted-foreground">
-        No documents yet. Drop .flx files here or use the import button.
+        No documents yet. Drop ZIP/FLX/LIST files (or folders) in the import area above.
       </div>
     )
   }

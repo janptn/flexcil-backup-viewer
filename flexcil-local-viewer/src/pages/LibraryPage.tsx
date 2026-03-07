@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { type UIEventHandler, useEffect, useMemo, useRef, useState } from 'react'
 import { DropzoneOverlay } from '../components/DropzoneOverlay'
 import { ImportProgressPopup } from '../components/ImportProgressPopup'
 import { LibraryGrid } from '../components/LibraryGrid'
@@ -6,6 +6,61 @@ import { Sidebar } from '../components/Sidebar'
 import { Topbar } from '../components/Topbar'
 import { useLibraryContext } from '../context/LibraryContext'
 import type { CollectionFilter, DocumentRecord } from '../types'
+
+const LIBRARY_COLLECTION_KEY = 'flexcil-library-selected-collection-v1'
+const LIBRARY_QUERY_KEY = 'flexcil-library-query-v1'
+const LIBRARY_SCROLL_TOP_KEY = 'flexcil-library-scroll-top-v1'
+
+function isCollectionFilter(value: unknown): value is CollectionFilter {
+  if (typeof value !== 'object' || value === null || !('type' in value)) {
+    return false
+  }
+
+  const type = (value as { type?: unknown }).type
+  if (type === 'all' || type === 'recent') {
+    return true
+  }
+
+  if ((type === 'source' || type === 'folder') && 'value' in value) {
+    return typeof (value as { value?: unknown }).value === 'string'
+  }
+
+  return false
+}
+
+function loadStoredCollection(): CollectionFilter {
+  try {
+    const value = localStorage.getItem(LIBRARY_COLLECTION_KEY)
+    if (!value) {
+      return { type: 'all' }
+    }
+    const parsed: unknown = JSON.parse(value)
+    return isCollectionFilter(parsed) ? parsed : { type: 'all' }
+  } catch {
+    return { type: 'all' }
+  }
+}
+
+function loadStoredQuery(): string {
+  try {
+    return localStorage.getItem(LIBRARY_QUERY_KEY) ?? ''
+  } catch {
+    return ''
+  }
+}
+
+function loadStoredScrollTop(): number {
+  try {
+    const value = localStorage.getItem(LIBRARY_SCROLL_TOP_KEY)
+    if (!value) {
+      return 0
+    }
+    const parsed = Number(value)
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0
+  } catch {
+    return 0
+  }
+}
 
 const META_FOLDER_KEYS = new Set([
   'folder',
@@ -86,11 +141,11 @@ function documentMatchesCollection(document: DocumentRecord, collection: Collect
 export function LibraryPage() {
   const { documents, loading, importFlxFiles, isImporting, importProgress } = useLibraryContext()
 
-  const inputRef = useRef<HTMLInputElement>(null)
-  const listInputRef = useRef<HTMLInputElement>(null)
-  const backupZipInputRef = useRef<HTMLInputElement>(null)
-  const [query, setQuery] = useState('')
-  const [collection, setCollection] = useState<CollectionFilter>({ type: 'all' })
+  const importInputRef = useRef<HTMLInputElement>(null)
+  const [query, setQuery] = useState(() => loadStoredQuery())
+  const [collection, setCollection] = useState<CollectionFilter>(() => loadStoredCollection())
+  const mainScrollRef = useRef<HTMLElement | null>(null)
+  const hasRestoredScrollRef = useRef(false)
   const [dragging, setDragging] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const [isDarkMode, setIsDarkMode] = useState(() => {
@@ -128,16 +183,60 @@ export function LibraryPage() {
     return base
   }, [collection, documents, query])
 
+  const totalDocumentsCount = documents.length
+  const filteredDocumentsCount = filteredDocuments.length
+  const hasActiveFilter = query.trim().length > 0 || collection.type !== 'all'
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(LIBRARY_COLLECTION_KEY, JSON.stringify(collection))
+    } catch {
+    }
+  }, [collection])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(LIBRARY_QUERY_KEY, query)
+    } catch {
+    }
+  }, [query])
+
+  useEffect(() => {
+    if (loading || hasRestoredScrollRef.current) {
+      return
+    }
+
+    const targetScrollTop = loadStoredScrollTop()
+    hasRestoredScrollRef.current = true
+    if (targetScrollTop <= 0) {
+      return
+    }
+
+    const restoreId = window.requestAnimationFrame(() => {
+      if (mainScrollRef.current) {
+        mainScrollRef.current.scrollTop = targetScrollTop
+      }
+    })
+
+    return () => {
+      window.cancelAnimationFrame(restoreId)
+    }
+  }, [loading, filteredDocuments.length])
+
+  const handleMainScroll: UIEventHandler<HTMLElement> = (event) => {
+    try {
+      localStorage.setItem(LIBRARY_SCROLL_TOP_KEY, String(event.currentTarget.scrollTop))
+    } catch {
+    }
+  }
+
   const openImportDialog = () => {
-    inputRef.current?.click()
+    importInputRef.current?.click()
   }
 
-  const openFolderSyncDialog = () => {
-    listInputRef.current?.click()
-  }
-
-  const openBackupZipDialog = () => {
-    backupZipInputRef.current?.click()
+  const resetFilters = () => {
+    setCollection({ type: 'all' })
+    setQuery('')
   }
 
   const showSummaryToast = (added: number, updated: number, skipped: number) => {
@@ -180,10 +279,7 @@ export function LibraryPage() {
       <Topbar
         query={query}
         onQueryChange={setQuery}
-        onImport={openImportDialog}
-        onRefreshImport={openImportDialog}
-        onSyncFolders={openFolderSyncDialog}
-        onBackupSelect={openBackupZipDialog}
+        onBackupSelect={openImportDialog}
         onBackupDrop={(files) => {
           void handleImportFiles(files)
         }}
@@ -199,7 +295,28 @@ export function LibraryPage() {
           folderGroups={folderGroups}
         />
 
-        <main className="relative min-h-0 flex-1 overflow-auto p-4 md:p-6">
+        <main
+          ref={mainScrollRef}
+          onScroll={handleMainScroll}
+          className="relative min-h-0 flex-1 overflow-auto p-4 md:p-6"
+        >
+          <div className="mb-4 flex items-center justify-between rounded-xl border border-border bg-card px-3 py-2 text-xs text-muted-foreground">
+            <span>
+              {hasActiveFilter
+                ? `${filteredDocumentsCount} von ${totalDocumentsCount} Dokumenten sichtbar`
+                : `${totalDocumentsCount} Dokumente`}
+            </span>
+            {hasActiveFilter && (
+              <button
+                type="button"
+                onClick={resetFilters}
+                className="rounded-md border border-border bg-background px-2 py-1 text-xs font-medium text-foreground transition hover:bg-muted"
+              >
+                Filter zurücksetzen
+              </button>
+            )}
+          </div>
+
           {loading ? (
             <p className="text-sm text-muted-foreground">Loading library...</p>
           ) : (
@@ -211,36 +328,10 @@ export function LibraryPage() {
       </div>
 
       <input
-        ref={inputRef}
+        ref={importInputRef}
         type="file"
         multiple
         accept=".flx,.list,.zip"
-        className="hidden"
-        onChange={(event) => {
-          if (event.target.files) {
-            void handleImportFiles(event.target.files)
-            event.target.value = ''
-          }
-        }}
-      />
-
-      <input
-        ref={listInputRef}
-        type="file"
-        accept=".list"
-        className="hidden"
-        onChange={(event) => {
-          if (event.target.files) {
-            void handleImportFiles(event.target.files)
-            event.target.value = ''
-          }
-        }}
-      />
-
-      <input
-        ref={backupZipInputRef}
-        type="file"
-        accept=".zip"
         className="hidden"
         onChange={(event) => {
           if (event.target.files) {

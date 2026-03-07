@@ -1,12 +1,9 @@
-import { Moon, RefreshCw, Search, Sun, Upload } from 'lucide-react'
+import { Moon, Search, Sun } from 'lucide-react'
 import { useState } from 'react'
 
 interface TopbarProps {
   query: string
   onQueryChange: (next: string) => void
-  onImport: () => void
-  onRefreshImport: () => void
-  onSyncFolders: () => void
   onBackupSelect: () => void
   onBackupDrop: (files: FileList | File[]) => void
   onToggleTheme: () => void
@@ -17,9 +14,6 @@ interface TopbarProps {
 export function Topbar({
   query,
   onQueryChange,
-  onImport,
-  onRefreshImport,
-  onSyncFolders,
   onBackupSelect,
   onBackupDrop,
   onToggleTheme,
@@ -82,38 +76,8 @@ export function Topbar({
               isBackupDragActive ? 'border-accent bg-accent/10 text-accent' : 'border-border bg-background text-muted-foreground hover:bg-muted'
             }`}
           >
-            Drop ZIP backup here
+            Drop ZIP/FLX/LIST (or folder) here
           </div>
-
-          <button
-            type="button"
-            onClick={onImport}
-            disabled={isImporting}
-            className="inline-flex h-10 items-center gap-2 rounded-xl bg-accent px-4 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-60"
-          >
-            <Upload className="size-4" />
-            Import (.flx/.list)
-          </button>
-
-          <button
-            type="button"
-            onClick={onSyncFolders}
-            disabled={isImporting}
-            className="inline-flex h-10 items-center gap-2 rounded-xl border border-border bg-background px-4 text-sm font-medium transition hover:bg-muted disabled:opacity-60"
-          >
-            <RefreshCw className="size-4" />
-            Sync folder structure
-          </button>
-
-          <button
-            type="button"
-            onClick={onRefreshImport}
-            disabled={isImporting}
-            className="inline-flex h-10 items-center gap-2 rounded-xl border border-border bg-background px-4 text-sm font-medium transition hover:bg-muted disabled:opacity-60"
-          >
-            <RefreshCw className="size-4" />
-            Refresh documents
-          </button>
 
           <button
             type="button"

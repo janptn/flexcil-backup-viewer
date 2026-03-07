@@ -85,6 +85,10 @@ export async function saveDocumentRecords(
     const nextInkDrawings = hasKeys(incoming.inkDrawingsByPageKey)
       ? incoming.inkDrawingsByPageKey
       : existing.inkDrawingsByPageKey
+    const nextPageCount =
+      typeof existing.pageCount === 'number' && existing.pageCount > 0
+        ? existing.pageCount
+        : incoming.pageCount
 
     return {
       ...existing,
@@ -95,6 +99,7 @@ export async function saveDocumentRecords(
       meta: nextMeta,
       folderPath: nextFolder,
       fullText: nextFullText,
+      pageCount: nextPageCount,
       inkPageKeys: nextInkPageKeys,
       inkDrawingsByPageKey: nextInkDrawings,
     }
@@ -109,6 +114,7 @@ export async function saveDocumentRecords(
       hasMeta: Boolean(left.meta),
       hasThumbnail: Boolean(left.thumbnailBlob),
       hasFullText: Boolean(left.fullText && left.fullText.trim().length > 0),
+      pageCount: left.pageCount ?? 0,
       inkPageKeys: stableJson(left.inkPageKeys),
       inkDrawingsByPageKey: stableJson(left.inkDrawingsByPageKey),
     }) ===
@@ -120,6 +126,7 @@ export async function saveDocumentRecords(
         hasMeta: Boolean(right.meta),
         hasThumbnail: Boolean(right.thumbnailBlob),
         hasFullText: Boolean(right.fullText && right.fullText.trim().length > 0),
+        pageCount: right.pageCount ?? 0,
         inkPageKeys: stableJson(right.inkPageKeys),
         inkDrawingsByPageKey: stableJson(right.inkDrawingsByPageKey),
       })

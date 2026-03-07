@@ -21,6 +21,7 @@ export interface DocumentRecord {
   createdAt: number
   addedAt: number
   sourceFileName: string
+  pageCount?: number
   pdfBlob: Blob
   pdfHash: string
   sizeBytes: number
@@ -49,4 +50,43 @@ export interface ImportProgress {
   active: boolean
   stage: string
   percent: number
+}
+
+export interface PdfSearchHit {
+  id: string
+  pageNumber: number
+  snippet: string
+}
+
+export interface TabViewState {
+  currentPage: number
+  zoomPercent: number
+  scrollPosition: number
+}
+
+export interface TabSearchState {
+  searchQuery: string
+  selectedMatchIndex: number
+  searchResults: PdfSearchHit[]
+}
+
+export interface WorkspaceTabState {
+  id: string
+  documentId: string
+  title: string
+  view: TabViewState
+  search: TabSearchState
+}
+
+export interface WorkspacePaneState {
+  id: string
+  activeTabId: string | null
+  tabIds: string[]
+  isSearchOpen: boolean
+}
+
+export interface WorkspaceState {
+  panes: WorkspacePaneState[]
+  tabsById: Record<string, WorkspaceTabState>
+  activePaneId: string
 }

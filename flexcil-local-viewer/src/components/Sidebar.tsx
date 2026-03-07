@@ -3,6 +3,33 @@ import { ChevronDown, ChevronRight, History, Library } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import type { CollectionFilter } from '../types'
 
+const SIDEBAR_EXPANDED_KEY = 'flexcil-library-expanded-folders-v1'
+
+function loadExpandedFolders(): Set<string> {
+  try {
+    const raw = localStorage.getItem(SIDEBAR_EXPANDED_KEY)
+    if (!raw) {
+      return new Set()
+    }
+
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) {
+      return new Set()
+    }
+
+    return new Set(parsed.filter((value) => typeof value === 'string'))
+  } catch {
+    return new Set()
+  }
+}
+
+function saveExpandedFolders(values: Set<string>) {
+  try {
+    localStorage.setItem(SIDEBAR_EXPANDED_KEY, JSON.stringify(Array.from(values)))
+  } catch {
+  }
+}
+
 interface SidebarProps {
   selected: CollectionFilter
   onSelect: (next: CollectionFilter) => void
@@ -149,7 +176,7 @@ function ItemButton({
 
 export function Sidebar({ selected, onSelect, folderGroups }: SidebarProps) {
   const folderTree = useMemo(() => buildFolderTree(folderGroups), [folderGroups])
-  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [expanded, setExpanded] = useState<Set<string>>(() => loadExpandedFolders())
 
   const toggleExpanded = (value: string) => {
     setExpanded((previous) => {
@@ -159,6 +186,7 @@ export function Sidebar({ selected, onSelect, folderGroups }: SidebarProps) {
       } else {
         next.add(value)
       }
+      saveExpandedFolders(next)
       return next
     })
   }

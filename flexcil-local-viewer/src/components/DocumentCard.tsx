@@ -24,7 +24,7 @@ export function DocumentCard({ document }: { document: DocumentRecord }) {
   return (
     <div className="group relative overflow-hidden rounded-2xl border border-border bg-card shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg">
       <Link
-        to={`/doc/${document.id}`}
+        to={`/workspace?doc=${encodeURIComponent(document.id)}`}
         className="block"
       >
         <div className="aspect-[4/3] overflow-hidden bg-muted">
@@ -44,13 +44,16 @@ export function DocumentCard({ document }: { document: DocumentRecord }) {
         <div className="space-y-1.5 p-4">
           <h3 className="line-clamp-1 text-sm font-semibold text-foreground">{document.title}</h3>
           <p className="text-xs text-muted-foreground">
-            {formatDate(document.addedAt)} • {formatBytes(document.sizeBytes)}
+            {formatDate(document.createdAt || document.addedAt)} • {formatBytes(document.sizeBytes)}
+            {typeof document.pageCount === 'number' && document.pageCount > 0
+              ? ` • ${document.pageCount} Seiten`
+              : ''}
           </p>
         </div>
       </Link>
 
       <Link
-        to={`/doc/${document.id}`}
+        to={`/workspace?doc=${encodeURIComponent(document.id)}`}
         target="_blank"
         rel="noreferrer"
         className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-card/90 text-muted-foreground shadow-sm transition hover:bg-muted"

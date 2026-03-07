@@ -11,7 +11,7 @@ export function formatBytes(bytes: number): string {
 }
 
 export function formatDate(timestamp: number): string {
-  return new Intl.DateTimeFormat('en-US', {
+  return new Intl.DateTimeFormat('de-DE', {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',

@@ -72,6 +72,11 @@ h1 {
   background: #334155;
 }
 
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .btn-primary {
   border-color: #2563eb;
   background: #2563eb;
@@ -85,7 +90,7 @@ h1 {
 .status {
   margin: 0;
   border-top: 1px solid #1f2937;
-  padding-top: 10px;
+  padding-top: 8px;
   font-size: 12px;
   color: #94a3b8;
 }

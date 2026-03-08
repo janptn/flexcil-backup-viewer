@@ -1,7 +1,9 @@
 const { app, BrowserWindow, ipcMain, shell, clipboard } = require('electron')
 const path = require('path')
 const http = require('http')
+const fs = require('fs')
 const { spawn } = require('child_process')
+const { autoUpdater } = require('electron-updater')
 
 const HOST = '127.0.0.1'
 const PORT = 41731
@@ -15,9 +17,31 @@ let serverProcess = null
 let mainWindow = null
 let isShuttingDown = false
 let didAutoOpen = false
+let isUpdateDownloaded = false
 
 function serverScriptPath() {
   return path.join(app.getAppPath(), 'launcher', 'server.cjs')
+}
+
+function resolveServerRuntimePaths() {
+  const packagedServerPath = path.join(process.resourcesPath, 'launcher', 'server.cjs')
+  if (fs.existsSync(packagedServerPath)) {
+    return {
+      scriptPath: packagedServerPath,
+      workingDirectory: process.resourcesPath,
+    }
+  }
+
+  const fallbackScriptPath = serverScriptPath()
+  const appPath = app.getAppPath()
+  const workingDirectory = fs.existsSync(appPath) && fs.statSync(appPath).isDirectory()
+    ? appPath
+    : path.dirname(appPath)
+
+  return {
+    scriptPath: fallbackScriptPath,
+    workingDirectory,
+  }
 }
 
 function createMainWindow() {
@@ -82,8 +106,92 @@ function sendStatusToRenderer(payload) {
   mainWindow.webContents.send('launcher:status', payload)
 }
 
+function sendUpdateToRenderer(payload) {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return
+  }
+  mainWindow.webContents.send('launcher:update', payload)
+}
+
 function openInterface() {
   return shell.openExternal(APP_URL)
+}
+
+function configureAutoUpdater() {
+  if (!app.isPackaged) {
+    sendUpdateToRenderer({
+      state: 'disabled',
+      message: 'Auto update is available in installed builds.',
+    })
+    return
+  }
+
+  autoUpdater.autoDownload = true
+  autoUpdater.autoInstallOnAppQuit = true
+
+  autoUpdater.on('checking-for-update', () => {
+    sendUpdateToRenderer({ state: 'checking', message: 'Checking for updates…' })
+  })
+
+  autoUpdater.on('update-available', (info) => {
+    sendUpdateToRenderer({
+      state: 'available',
+      message: `Update ${info.version} found. Downloading…`,
+      version: info.version,
+    })
+  })
+
+  autoUpdater.on('download-progress', (progress) => {
+    sendUpdateToRenderer({
+      state: 'downloading',
+      message: `Downloading update… ${Math.round(progress.percent)}%`,
+      percent: progress.percent,
+    })
+  })
+
+  autoUpdater.on('update-downloaded', (info) => {
+    isUpdateDownloaded = true
+    sendUpdateToRenderer({
+      state: 'downloaded',
+      message: `Update ${info.version} ready. Click Install Update.`,
+      version: info.version,
+      canInstall: true,
+    })
+  })
+
+  autoUpdater.on('update-not-available', () => {
+    sendUpdateToRenderer({ state: 'none', message: 'No updates available.' })
+  })
+
+  autoUpdater.on('error', (error) => {
+    const message = error instanceof Error ? error.message : String(error)
+    sendUpdateToRenderer({
+      state: 'error',
+      message: `Update check failed: ${message}`,
+    })
+  })
+}
+
+async function checkForLauncherUpdates() {
+  if (!app.isPackaged) {
+    sendUpdateToRenderer({
+      state: 'disabled',
+      message: 'Auto update is available in installed builds.',
+    })
+    return { ok: false, reason: 'not-packaged' }
+  }
+
+  try {
+    await autoUpdater.checkForUpdates()
+    return { ok: true }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    sendUpdateToRenderer({
+      state: 'error',
+      message: `Update check failed: ${message}`,
+    })
+    return { ok: false, reason: message }
+  }
 }
 
 async function stopServer() {
@@ -122,16 +230,28 @@ async function stopServer() {
 }
 
 function startServerProcess() {
-  const scriptPath = serverScriptPath()
-  const child = spawn(process.execPath, [scriptPath, '--no-window'], {
-    cwd: app.getAppPath(),
-    env: {
-      ...process.env,
-      ELECTRON_RUN_AS_NODE: '1',
-    },
-    windowsHide: true,
-    stdio: 'pipe',
-  })
+  const { scriptPath, workingDirectory } = resolveServerRuntimePaths()
+  let child
+
+  try {
+    child = spawn(process.execPath, [scriptPath, '--no-window'], {
+      cwd: workingDirectory,
+      env: {
+        ...process.env,
+        ELECTRON_RUN_AS_NODE: '1',
+      },
+      windowsHide: true,
+      stdio: 'pipe',
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    sendStatusToRenderer({
+      state: 'error',
+      message: `Failed to start server process: ${message}`,
+      url: APP_URL,
+    })
+    return false
+  }
 
   child.stdout.on('data', (chunk) => {
     const message = String(chunk).trim()
@@ -168,10 +288,12 @@ function startServerProcess() {
   })
 
   serverProcess = child
+  return true
 }
 
 async function bootstrap() {
   mainWindow = createMainWindow()
+  configureAutoUpdater()
 
   sendStatusToRenderer({
     state: 'starting',
@@ -179,7 +301,10 @@ async function bootstrap() {
     url: APP_URL,
   })
 
-  startServerProcess()
+  const didStart = startServerProcess()
+  if (!didStart) {
+    return
+  }
   const isReady = await waitForServerReady(APP_URL, HEALTH_TIMEOUT_MS)
 
   if (!isReady) {
@@ -201,6 +326,8 @@ async function bootstrap() {
     didAutoOpen = true
     await openInterface()
   }
+
+  void checkForLauncherUpdates()
 }
 
 ipcMain.handle('launcher:get-state', () => {
@@ -224,6 +351,23 @@ ipcMain.handle('launcher:quit', async () => {
   isShuttingDown = true
   await stopServer()
   app.quit()
+  return { ok: true }
+})
+
+ipcMain.handle('launcher:check-updates', async () => {
+  return checkForLauncherUpdates()
+})
+
+ipcMain.handle('launcher:install-update', async () => {
+  if (!isUpdateDownloaded) {
+    return { ok: false, reason: 'not-downloaded' }
+  }
+
+  isShuttingDown = true
+  await stopServer()
+  setImmediate(() => {
+    autoUpdater.quitAndInstall(false, true)
+  })
   return { ok: true }
 })
 

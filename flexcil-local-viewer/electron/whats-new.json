@@ -1,0 +1,10 @@
+{
+  "title": "What's new",
+  "version": "1.2.3",
+  "items": [
+    "Electron launcher now starts and stops the local server reliably.",
+    "Built-in update controls: Check Update and Install Update.",
+    "Improved library persistence (folders, filters, scroll position).",
+    "Document cards now show page count and real document date metadata."
+  ]
+}

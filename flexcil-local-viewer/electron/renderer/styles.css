@@ -17,7 +17,7 @@ body {
 }
 
 .card {
-  width: min(420px, calc(100vw - 24px));
+  width: min(700px, calc(100vw - 24px));
   border: 1px solid #334155;
   border-radius: 14px;
   background: #111827;
@@ -52,8 +52,33 @@ h1 {
 
 .actions {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
+}
+
+.notes-panel {
+  display: grid;
+  gap: 8px;
+}
+
+.notes-panel h2 {
+  margin: 0;
+  font-size: 14px;
+  color: #cbd5e1;
+  font-weight: 700;
+}
+
+.notes-box {
+  max-height: 190px;
+  overflow: auto;
+  white-space: pre-wrap;
+  line-height: 1.45;
+  font-size: 12px;
+  color: #e2e8f0;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  background: #020617;
+  padding: 10px 12px;
 }
 
 .btn {

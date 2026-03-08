@@ -1,6 +1,8 @@
 const urlBox = document.getElementById('urlBox')
 const statusText = document.getElementById('statusText')
 const updateStatusText = document.getElementById('updateStatusText')
+const whatsNewTitle = document.getElementById('whatsNewTitle')
+const whatsNewBox = document.getElementById('whatsNewBox')
 const openBtn = document.getElementById('openBtn')
 const copyBtn = document.getElementById('copyBtn')
 const quitBtn = document.getElementById('quitBtn')
@@ -17,6 +19,22 @@ function setUpdateStatus(message) {
   updateStatusText.textContent = `Updater: ${message}`
 }
 
+function renderNotes(title, notesText) {
+  whatsNewTitle.textContent = title
+  whatsNewBox.textContent = notesText && notesText.trim().length > 0 ? notesText : 'No notes yet.'
+}
+
+function linesToNotes(lines) {
+  if (!Array.isArray(lines)) {
+    return ''
+  }
+
+  return lines
+    .filter((line) => typeof line === 'string' && line.trim().length > 0)
+    .map((line) => `• ${line.trim()}`)
+    .join('\n')
+}
+
 function flashButton(button, text) {
   const original = button.textContent
   button.textContent = text
@@ -29,6 +47,14 @@ async function init() {
   const state = await window.launcherApi.getState()
   currentUrl = state.url || currentUrl
   urlBox.textContent = currentUrl
+  setUpdateStatus(`ready (v${state.appVersion ?? 'unknown'})`)
+
+  const localNotes = state.whatsNew
+  if (localNotes && Array.isArray(localNotes.items) && localNotes.items.length > 0) {
+    const localTitle = `${localNotes.title || "What's new"} (v${localNotes.version || state.appVersion || ''})`
+      .replace(/\s+\(v\)$/, '')
+    renderNotes(localTitle, linesToNotes(localNotes.items))
+  }
 
   openBtn.addEventListener('click', async () => {
     await window.launcherApi.openInterface()
@@ -76,6 +102,11 @@ async function init() {
     }
 
     setUpdateStatus(payload.message)
+
+    if (typeof payload.releaseNotes === 'string' && payload.releaseNotes.trim().length > 0) {
+      const version = typeof payload.version === 'string' ? payload.version : 'new'
+      renderNotes(`Update notes (v${version})`, payload.releaseNotes)
+    }
 
     if (payload.state === 'downloaded' || payload.canInstall) {
       installUpdateBtn.disabled = false

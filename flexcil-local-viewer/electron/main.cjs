@@ -19,6 +19,61 @@ let isShuttingDown = false
 let didAutoOpen = false
 let isUpdateDownloaded = false
 
+function loadLocalWhatsNew() {
+  const filePath = path.join(__dirname, 'whats-new.json')
+
+  try {
+    const raw = fs.readFileSync(filePath, 'utf8')
+    const parsed = JSON.parse(raw)
+
+    if (!parsed || typeof parsed !== 'object') {
+      return null
+    }
+
+    const title = typeof parsed.title === 'string' && parsed.title.trim().length > 0
+      ? parsed.title.trim()
+      : 'What\'s new'
+    const version = typeof parsed.version === 'string' ? parsed.version : app.getVersion()
+    const items = Array.isArray(parsed.items)
+      ? parsed.items.filter((item) => typeof item === 'string' && item.trim().length > 0)
+      : []
+
+    return {
+      title,
+      version,
+      items,
+    }
+  } catch {
+    return null
+  }
+}
+
+function normalizeReleaseNotes(releaseNotes) {
+  if (typeof releaseNotes === 'string' && releaseNotes.trim().length > 0) {
+    return releaseNotes.trim()
+  }
+
+  if (!Array.isArray(releaseNotes)) {
+    return ''
+  }
+
+  return releaseNotes
+    .map((entry) => {
+      if (typeof entry === 'string') {
+        return entry
+      }
+
+      if (entry && typeof entry === 'object' && typeof entry.note === 'string') {
+        return entry.note
+      }
+
+      return ''
+    })
+    .filter((entry) => entry.trim().length > 0)
+    .join('\n\n')
+    .trim()
+}
+
 function serverScriptPath() {
   return path.join(app.getAppPath(), 'launcher', 'server.cjs')
 }
@@ -47,11 +102,11 @@ function resolveServerRuntimePaths() {
 function createMainWindow() {
   const window = new BrowserWindow({
     title: 'Flexcil Local Viewer',
-    width: 460,
-    height: 330,
-    minWidth: 440,
-    minHeight: 320,
-    resizable: false,
+    width: 760,
+    height: 640,
+    minWidth: 680,
+    minHeight: 560,
+    resizable: true,
     center: true,
     autoHideMenuBar: true,
     backgroundColor: '#0f172a',
@@ -134,10 +189,12 @@ function configureAutoUpdater() {
   })
 
   autoUpdater.on('update-available', (info) => {
+    const releaseNotes = normalizeReleaseNotes(info.releaseNotes)
     sendUpdateToRenderer({
       state: 'available',
       message: `Update ${info.version} found. Downloading…`,
       version: info.version,
+      releaseNotes,
     })
   })
 
@@ -151,11 +208,13 @@ function configureAutoUpdater() {
 
   autoUpdater.on('update-downloaded', (info) => {
     isUpdateDownloaded = true
+    const releaseNotes = normalizeReleaseNotes(info.releaseNotes)
     sendUpdateToRenderer({
       state: 'downloaded',
       message: `Update ${info.version} ready. Click Install Update.`,
       version: info.version,
       canInstall: true,
+      releaseNotes,
     })
   })
 
@@ -334,6 +393,8 @@ ipcMain.handle('launcher:get-state', () => {
   return {
     url: APP_URL,
     autoOpen: AUTO_OPEN_BROWSER,
+    appVersion: app.getVersion(),
+    whatsNew: loadLocalWhatsNew(),
   }
 })
 

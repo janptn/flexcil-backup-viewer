@@ -17,7 +17,7 @@
     "build:server": "node -e \"require('fs').accessSync('launcher/server.cjs'); console.log('server launcher ready')\"",
     "build:electron": "npm run build:web && npm run build:server",
     "electron:dev": "npm run build:electron && electron .",
-    "dist:win": "npm run build:electron && electron-builder --win nsis",
+    "dist:win": "npm run build:electron && electron-builder --win nsis --publish never",
     "prepare:icons": "node scripts/prepare-icons.cjs",
     "set:exe:icon": "node scripts/set-exe-icon.cjs",
     "build:server:exe": "pkg package.json --targets node18-win-x64 --output release/Flexcil-Local-Viewer-Server.exe",

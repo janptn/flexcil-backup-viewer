@@ -29,37 +29,40 @@ npm run build
 npm run preview
 ```
 
-## Build Windows EXE (Browser Launcher, no Electron)
+## Electron Launcher (Windows)
 
-The Windows build now creates a dedicated GUI wrapper app (no console window) plus an internal server executable.
+The app UI stays a normal browser app on `http://127.0.0.1:41731`.
+Electron is only used as a small native launcher that:
 
-The GUI wrapper:
+1. Starts the local server
+2. Shows launcher controls (`Open Interface`, `Copy Address`, `Quit`)
+3. Opens the URL in the default external browser
+4. Stops the server when the launcher exits
 
-1. Starts the local server executable in the background
-2. Shows a centered launcher window with URL + button (`Oberfläche öffnen`)
-3. Uses a persistent local data folder so imported documents survive restart
+### Local launcher run
 
 ```bash
-npm run build:exe
+npm run electron:dev
 ```
 
-Output file:
+### Build Windows installer
 
-- Start this file: `release/Flexcil-Local-Viewer.exe`
-- Keep together in the same folder: `release/Flexcil-Local-Viewer-Server.exe`
+```bash
+npm run dist:win
+```
 
-Users can simply double-click the EXE. No dev setup required.
+Artifacts are written to:
 
-### EXE Data Persistence (Portable)
+- `release/electron/*.exe`
+
+### Data Persistence
 
 - The launcher now uses a fixed local URL (`http://127.0.0.1:41731`) so IndexedDB stays on the same origin.
-- On Windows, it tries to launch Edge/Chrome with a dedicated profile at `flexcil-data/browser-profile` next to the EXE.
-- The launcher does not auto-open the browser.
-- Use `Oberfläche öffnen` in the launcher window to open the URL in your default browser.
+- The launcher can auto-open your default browser after server startup.
+- Use `Open Interface` in the launcher window to open the URL again in your default browser.
 - You can always copy/open the shown URL manually from the launcher window if needed.
-- Launcher window and EXE icon use `public/logo.svg` -> `launcher/logo.ico` during `npm run build:exe` (with `rcedit` + fallback).
-- Result: imported library data remains available after closing/reopening the EXE.
-- Update workflow: replace `Flexcil-Local-Viewer.exe` and `Flexcil-Local-Viewer-Server.exe`; keep the `flexcil-data` folder.
+- Launcher and installer icon use `launcher/logo.ico`.
+- Result: imported library data remains available after closing/reopening the launcher.
 
 ## Usage
 

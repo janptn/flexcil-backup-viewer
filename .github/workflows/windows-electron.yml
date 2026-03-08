@@ -1,0 +1,50 @@
+name: Build Windows Electron launcher
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    defaults:
+      run:
+        working-directory: flexcil-local-viewer
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: flexcil-local-viewer/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Windows package
+        run: npm run dist:win
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: flexcil-local-viewer-windows
+          path: |
+            flexcil-local-viewer/release/electron/*.exe
+            flexcil-local-viewer/release/electron/*.yml
+            flexcil-local-viewer/release/electron/*.blockmap
+
+      - name: Attach artifacts to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            flexcil-local-viewer/release/electron/*.exe
+            flexcil-local-viewer/release/electron/*.yml
+            flexcil-local-viewer/release/electron/*.blockmap

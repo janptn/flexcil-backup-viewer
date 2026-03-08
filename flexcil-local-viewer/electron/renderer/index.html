@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Flexcil Local Viewer</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="card">
+      <h1>Flexcil Local Viewer</h1>
+      <p class="description">
+        Server is running. Use the address in your browser if the button does not work.
+      </p>
+
+      <div class="url-box" id="urlBox">http://127.0.0.1:41731</div>
+
+      <div class="actions">
+        <button id="openBtn" class="btn btn-primary">Open Interface</button>
+        <button id="copyBtn" class="btn">Copy Address</button>
+        <button id="quitBtn" class="btn">Quit</button>
+      </div>
+
+      <p class="status" id="statusText">Starting local server…</p>
+    </main>
+
+    <script src="./renderer.js"></script>
+  </body>
+</html>

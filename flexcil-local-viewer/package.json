@@ -1,15 +1,19 @@
 {
   "name": "flexcil-local-viewer",
   "private": true,
-  "version": "1.0.0",
-  "description": "Local Flexcil backup PDF viewer browser launcher",
+  "version": "1.2.0",
+  "description": "Local Flexcil backup PDF viewer with Electron launcher",
   "author": "Jan",
-  "main": "launcher/server.cjs",
-  "bin": "launcher/server.cjs",
+  "main": "electron/main.cjs",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "npm run build:web",
+    "build:web": "tsc -b && vite build",
+    "build:server": "node -e \"require('fs').accessSync('launcher/server.cjs'); console.log('server launcher ready')\"",
+    "build:electron": "npm run build:web && npm run build:server",
+    "electron:dev": "npm run build:electron && electron .",
+    "dist:win": "npm run build:electron && electron-builder --win nsis",
     "prepare:icons": "node scripts/prepare-icons.cjs",
     "set:exe:icon": "node scripts/set-exe-icon.cjs",
     "build:server:exe": "pkg package.json --targets node18-win-x64 --output release/Flexcil-Local-Viewer-Server.exe",
@@ -37,6 +41,8 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.27",
+    "electron": "^37.3.1",
+    "electron-builder": "^26.0.12",
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
@@ -58,5 +64,38 @@
       "dist/**/*",
       "launcher/logo.ico"
     ]
+  },
+  "build": {
+    "appId": "com.flexcil.localviewer.launcher",
+    "productName": "Flexcil Local Viewer",
+    "directories": {
+      "output": "release/electron"
+    },
+    "files": [
+      "dist/**/*",
+      "launcher/server.cjs",
+      "electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "launcher/logo.ico",
+      "artifactName": "Flexcil-Local-Viewer-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "launcher/logo.ico",
+      "uninstallerIcon": "launcher/logo.ico",
+      "installerHeaderIcon": "launcher/logo.ico"
+    }
   }
 }

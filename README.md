@@ -29,6 +29,7 @@ The application allows you to open official Flexcil backup archives on your comp
 - ✍️ Displays Flexcil ink annotations (handwritten notes)
 - 🔎 Real-time full-text search across documents
 - 📑 Jump-to-page navigation
+- 🪓 Splitscreen in Viewer 
 - 🖼 Thumbnail preview grid
 - 📊 Import progress indicator
 - 💾 IndexedDB local storage
@@ -40,6 +41,7 @@ The application allows you to open official Flexcil backup archives on your comp
 ## ✍️ Annotation Rendering
 
 The viewer is capable of displaying Flexcil handwritten annotations directly on top of the original PDF pages.
+It is in Beta.
 
 This includes:
 - pen strokes
@@ -83,10 +85,11 @@ If you don’t want to run the development version, you can download the standal
 
 1. Go to the GitHub **Releases** page.
 2. Download the latest `.exe` file.
-3. Double-click to start the application.
-4. Your browser will open automatically.
+3. Double-click to start the small installer.
+4. A Launcher Appear with Update function etc.
+5. Your browser will open automatically.
 
-No installation required.
+When a update is availabel, the Launcher can download and Update automatically.
 
 ---
 

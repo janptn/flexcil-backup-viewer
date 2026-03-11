@@ -1,6 +1,7 @@
 import { openDB } from 'idb'
 import type { DBSchema } from 'idb'
 import type { DocumentRecord } from '../types'
+import { normalizeDocumentId } from './documentsList'
 import type { DocumentsListMapping } from './documentsList'
 
 const DB_NAME = 'flexcil-local-library'
@@ -60,17 +61,15 @@ export async function saveDocumentRecords(
   const db = await dbPromise
   const tx = db.transaction(STORE_DOCUMENTS, 'readwrite')
   const store = tx.store
-  const hashIndex = store.index('by-hash')
 
   let added = 0
   let updated = 0
   let skipped = 0
 
   const mergeRecord = (existing: DocumentRecord, incoming: DocumentRecord): DocumentRecord => {
-    const existingHasFolder = (existing.folderPath?.length ?? 0) > 0
     const incomingHasFolder = (incoming.folderPath?.length ?? 0) > 0
 
-    const nextFolder = existingHasFolder ? existing.folderPath : incomingHasFolder ? incoming.folderPath : undefined
+    const nextFolder = incomingHasFolder ? incoming.folderPath : existing.folderPath
     const nextMeta = existing.meta ?? incoming.meta
     const nextThumbnail = existing.thumbnailBlob ?? incoming.thumbnailBlob
     const nextFullText =
@@ -145,18 +144,6 @@ export async function saveDocumentRecords(
       continue
     }
 
-    const duplicateByHash = await hashIndex.get(record.pdfHash)
-    if (duplicateByHash) {
-      const merged = mergeRecord(duplicateByHash, record)
-      if (!recordsEqual(duplicateByHash, merged)) {
-        await store.put(merged)
-        updated += 1
-      } else {
-        skipped += 1
-      }
-      continue
-    }
-
     await store.put(record)
     added += 1
   }
@@ -179,16 +166,15 @@ export async function applyDocumentsListMappings(
   let updated = 0
 
   for (const existing of allDocuments) {
-    const mapping = mappings.get(existing.id.toUpperCase())
+    const mapping = mappings.get(existing.id.toUpperCase()) ?? mappings.get(normalizeDocumentId(existing.id))
     if (!mapping) {
       continue
     }
 
-    const hasFolder = (existing.folderPath?.length ?? 0) > 0
     const normalizedTitle = existing.title.trim().toUpperCase()
     const isFallbackTitle = normalizedTitle === existing.id.trim().toUpperCase()
 
-    const nextFolder = hasFolder ? existing.folderPath : mapping.folderPath
+    const nextFolder = mapping.folderPath?.length ? mapping.folderPath : existing.folderPath
     const nextTitle = isFallbackTitle && mapping.title ? mapping.title : existing.title
 
     const changedFolder = JSON.stringify(existing.folderPath ?? []) !== JSON.stringify(nextFolder ?? [])

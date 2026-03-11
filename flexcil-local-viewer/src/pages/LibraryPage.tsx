@@ -170,6 +170,18 @@ export function LibraryPage() {
     [documents],
   )
 
+  const recentDocuments = useMemo(
+    () =>
+      [...documents]
+        .sort((left, right) => {
+          const leftDate = Number.isFinite(left.createdAt) && left.createdAt > 0 ? left.createdAt : left.addedAt
+          const rightDate = Number.isFinite(right.createdAt) && right.createdAt > 0 ? right.createdAt : right.addedAt
+          return rightDate - leftDate
+        })
+        .slice(0, 8),
+    [documents],
+  )
+
   const filteredDocuments = useMemo(() => {
     const base = documents
       .filter((document) => documentMatchesCollection(document, collection))
@@ -293,6 +305,7 @@ export function LibraryPage() {
           selected={collection}
           onSelect={setCollection}
           folderGroups={folderGroups}
+          recentDocuments={recentDocuments}
         />
 
         <main
@@ -331,7 +344,7 @@ export function LibraryPage() {
         ref={importInputRef}
         type="file"
         multiple
-        accept=".flx,.list,.zip"
+        accept=".flx,.list,.zip,.flex"
         className="hidden"
         onChange={(event) => {
           if (event.target.files) {

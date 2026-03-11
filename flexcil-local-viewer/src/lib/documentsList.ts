@@ -12,6 +12,13 @@ interface ListNode {
   children?: unknown
 }
 
+export function normalizeDocumentId(value: string): string {
+  const trimmed = value.trim()
+  const lastSegment = trimmed.split(/[\\/]/g).pop() ?? trimmed
+  const withoutExtension = lastSegment.replace(/\.(pdf|flx|flex)$/i, '')
+  return withoutExtension.toUpperCase()
+}
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
@@ -57,12 +64,16 @@ function walkNodes(
     const nextPath = nodeName.length > 0 ? [...currentPath, nodeName] : currentPath
 
     if (typeof node.document === 'string' && node.document.trim().length > 0) {
-      const documentId = node.document.trim().toUpperCase()
-      output.set(documentId, {
-        documentId,
+      const rawDocumentId = node.document.trim().toUpperCase()
+      const normalizedDocumentId = normalizeDocumentId(node.document)
+      const mapping: DocumentsListMapping = {
+        documentId: normalizedDocumentId,
         folderPath: currentPath,
         title: nodeName || undefined,
-      })
+      }
+
+      output.set(rawDocumentId, mapping)
+      output.set(normalizedDocumentId, mapping)
     }
 
     walkNodes(node.children, nextPath, output)

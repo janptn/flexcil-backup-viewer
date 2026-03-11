@@ -66,6 +66,50 @@ interface CanvasPoint {
   pressure?: number
 }
 
+function removeIsolatedSpikePoints(points: CanvasPoint[], spikeThresholdPx: number): CanvasPoint[] {
+  if (points.length < 5) {
+    return points
+  }
+
+  const filtered: CanvasPoint[] = [points[0]]
+
+  for (let index = 1; index < points.length - 1; index += 1) {
+    const previous = points[index - 1]
+    const current = points[index]
+    const next = points[index + 1]
+
+    const prevDistance = Math.hypot(current.x - previous.x, current.y - previous.y)
+    const nextDistance = Math.hypot(next.x - current.x, next.y - current.y)
+    const bridgeDistance = Math.hypot(next.x - previous.x, next.y - previous.y)
+
+    const isSpike =
+      prevDistance > spikeThresholdPx &&
+      nextDistance > spikeThresholdPx &&
+      bridgeDistance < Math.min(prevDistance, nextDistance) * 0.35
+
+    if (!isSpike) {
+      filtered.push(current)
+    }
+  }
+
+  filtered.push(points[points.length - 1])
+  return filtered
+}
+
+function computeSegmentLength(points: CanvasPoint[]): number {
+  if (points.length < 2) {
+    return 0
+  }
+
+  let length = 0
+  for (let index = 1; index < points.length; index += 1) {
+    const previous = points[index - 1]
+    const current = points[index]
+    length += Math.hypot(current.x - previous.x, current.y - previous.y)
+  }
+  return length
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value))
 }
@@ -123,7 +167,8 @@ function applyChaikin(points: CanvasPoint[], iterations: number): CanvasPoint[] 
 
     const next: CanvasPoint[] = [result[0]]
     for (let index = 0; index < result.length - 1; index += 1) {
-      const current = result[index]
+      const 
+      current = result[index]
       const following = result[index + 1]
       next.push({
         x: 0.75 * current.x + 0.25 * following.x,
@@ -267,11 +312,14 @@ export function PdfViewer({
   const [inkDecodeMode, setInkDecodeMode] = useState<InkDecodeMode>('absolute')
   const [flipInkY, setFlipInkY] = useState(false)
   const [splitByPressure, setSplitByPressure] = useState(false)
+  const [pressureLiftThresholdRaw, setPressureLiftThresholdRaw] = useState(0.01)
+  const [connectorRejectLengthPx, setConnectorRejectLengthPx] = useState(28)
   const [inkOffsetXPercent, setInkOffsetXPercent] = useState(0)
   const [inkOffsetYPercent, setInkOffsetYPercent] = useState(-1)
   const [inkScaleXPercent, setInkScaleXPercent] = useState(100)
   const [inkScaleYPercent, setInkScaleYPercent] = useState(71.5)
   const [showInkDebugPanel, setShowInkDebugPanel] = useState(false)
+  const [showSegmentOverlay, setShowSegmentOverlay] = useState(false)
   const [enableInkSmoothing, setEnableInkSmoothing] = useState(true)
   const [inkSmoothingPercent, setInkSmoothingPercent] = useState(50)
   const [inkStrokeWidthPercent, setInkStrokeWidthPercent] = useState(100)
@@ -679,37 +727,116 @@ export function PdfViewer({
 
       context.strokeStyle = stroke.strokeStyle
       const baseStrokeWidth = (Number.isFinite(stroke.lineWidth) ? stroke.lineWidth : 2) * widthMultiplier
-      context.globalAlpha = opacity
+      context.globalAlpha = showSegmentOverlay ? 1 : opacity
 
-      const first = strokePoints[0]
-      let previousX = toCanvasX(first.xNorm)
-      let previousY = toCanvasY(first.yNorm)
-      let previousPressure = first.pressure
+      const canvasStrokePointsRaw = strokePoints.map((point) => ({
+        x: toCanvasX(point.xNorm),
+        y: toCanvasY(point.yNorm),
+        pressure: point.pressure,
+      }))
+      const spikeThresholdPx = Math.max(18, canvas.width * 0.03)
+      const canvasStrokePoints = removeIsolatedSpikePoints(canvasStrokePointsRaw, spikeThresholdPx)
+      if (canvasStrokePoints.length < 2) {
+        continue
+      }
+
+      const first = canvasStrokePoints[0]
+      let previousX = first.x
+      let previousY = first.y
       const jumpThresholdPx = Math.max(24, canvas.width * 0.04)
-      const segments: CanvasPoint[][] = [[{ x: previousX, y: previousY, pressure: first.pressure }]]
+      const manualLiftThreshold = clamp(pressureLiftThresholdRaw, 0, 0.2)
+      const liftPressureThreshold = Math.max(manualLiftThreshold, splitByPressure ? 0.05 : 0)
+      const numericPressures = canvasStrokePoints
+        .map((point) => point.pressure)
+        .filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
+      const lowPressureCount = numericPressures.filter((value) => value <= liftPressureThreshold).length
+      const lowPressureRatio = numericPressures.length > 0 ? lowPressureCount / numericPressures.length : 0
+      const hasPressureData = numericPressures.length >= Math.max(2, Math.floor(canvasStrokePoints.length * 0.1))
+      const hasReliablePressureSignal =
+        numericPressures.length >= Math.max(3, Math.floor(canvasStrokePoints.length * 0.2)) && lowPressureRatio < 0.9
+      const usePressureLiftSplit = splitByPressure || hasReliablePressureSignal || manualLiftThreshold > 0
+      const geometricLiftSensitivity = 0.35 + (manualLiftThreshold / 0.2) * 0.45
+      const firstIsLowPressure =
+        usePressureLiftSplit && typeof first.pressure === 'number' && first.pressure <= liftPressureThreshold
+      const secondPoint = canvasStrokePoints.length > 1 ? canvasStrokePoints[1] : undefined
+      const secondIsLowPressure =
+        usePressureLiftSplit &&
+        typeof secondPoint?.pressure === 'number' &&
+        secondPoint.pressure <= liftPressureThreshold
+      const isFirstLiftPoint = splitByPressure && firstIsLowPressure && secondIsLowPressure
+      let segments: CanvasPoint[][] = isFirstLiftPoint
+        ? []
+        : [[{ x: previousX, y: previousY, pressure: first.pressure }]]
+      let previousWasLift = isFirstLiftPoint
 
-      for (let index = 1; index < strokePoints.length; index += 1) {
-        const point = strokePoints[index]
-        const x = toCanvasX(point.xNorm)
-        const y = toCanvasY(point.yNorm)
+      for (let index = 1; index < canvasStrokePoints.length; index += 1) {
+        const point = canvasStrokePoints[index]
+        const previousPoint = canvasStrokePoints[index - 1]
+        const nextPoint = index + 1 < canvasStrokePoints.length ? canvasStrokePoints[index + 1] : undefined
+        const x = point.x
+        const y = point.y
         const jump = Math.hypot(x - previousX, y - previousY)
-        const isPenLift =
-          splitByPressure &&
-          typeof point.pressure === 'number' &&
-          point.pressure <= 0 &&
-          (previousPressure ?? 1) > 0
+        const isLowPressurePoint =
+          usePressureLiftSplit && typeof point.pressure === 'number' && point.pressure <= liftPressureThreshold
 
-        if (jump > jumpThresholdPx || isPenLift) {
+        const previousIsLowPressure =
+          usePressureLiftSplit &&
+          typeof previousPoint?.pressure === 'number' &&
+          previousPoint.pressure <= liftPressureThreshold
+        const nextIsLowPressure =
+          usePressureLiftSplit && typeof nextPoint?.pressure === 'number' && nextPoint.pressure <= liftPressureThreshold
+        const nextJump = nextPoint ? Math.hypot(nextPoint.x - x, nextPoint.y - y) : 0
+
+        const geometricLiftSignal =
+          jump > jumpThresholdPx * geometricLiftSensitivity && nextJump > jumpThresholdPx * geometricLiftSensitivity
+
+        const nonDebugLiftSignal =
+          (previousIsLowPressure || nextIsLowPressure) &&
+          (jump > jumpThresholdPx * 0.45 || nextJump > jumpThresholdPx * 0.45)
+
+        const pressureLiftSignal = isLowPressurePoint && (splitByPressure || nonDebugLiftSignal)
+        const fallbackLiftSignal = (!hasPressureData || splitByPressure) && geometricLiftSignal
+        const isCurrentLiftPoint = pressureLiftSignal || fallbackLiftSignal
+
+        // Treat lift points as separators only; do not draw them as stroke geometry.
+        if (isCurrentLiftPoint) {
+          previousWasLift = true
+          previousX = x
+          previousY = y
+          continue
+        }
+
+        if (segments.length === 0 || jump > jumpThresholdPx || previousWasLift) {
           segments.push([{ x, y, pressure: point.pressure }])
         } else {
           const currentSegment = segments[segments.length - 1]
           currentSegment.push({ x, y, pressure: point.pressure })
         }
 
+        previousWasLift = false
         previousX = x
         previousY = y
-        previousPressure = point.pressure
       }
+
+      const connectorRejectThresholdPx = clamp(connectorRejectLengthPx, 8, 120)
+      segments = segments.filter((segment) => {
+        if (segment.length < 2) {
+          return false
+        }
+
+        if (segment.length > 2) {
+          return true
+        }
+
+        const segmentLength = computeSegmentLength(segment)
+        // Ghost connectors are often represented as a long 2-point segment.
+        // Reject these by geometry even when pressure metadata is missing/noisy.
+        if (segmentLength > connectorRejectThresholdPx) {
+          return false
+        }
+
+        return true
+      })
 
       if (enableInkSmoothing && smoothingFactor > 0) {
         for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex += 1) {
@@ -717,8 +844,24 @@ export function PdfViewer({
         }
       }
 
-      for (const segment of segments) {
+      for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex += 1) {
+        const segment = segments[segmentIndex]
+        if (showSegmentOverlay) {
+          const hue = (segmentIndex * 67) % 360
+          context.strokeStyle = `hsla(${hue}, 90%, 65%, 0.95)`
+        } else {
+          context.strokeStyle = stroke.strokeStyle
+        }
+
         drawSegment(segment, baseStrokeWidth)
+
+        if (showSegmentOverlay && segment.length > 0) {
+          const firstPoint = segment[0]
+          context.beginPath()
+          context.fillStyle = context.strokeStyle
+          context.arc(firstPoint.x, firstPoint.y, 2.5, 0, Math.PI * 2)
+          context.fill()
+        }
       }
       context.globalAlpha = 1
     }
@@ -738,10 +881,13 @@ export function PdfViewer({
     inkStrokeWidthPercent,
     oneEuroBeta,
     oneEuroMinCutoff,
+    connectorRejectLengthPx,
     pressureGamma,
+    pressureLiftThresholdRaw,
     simplifyEpsilonPx,
     speedSensitivity,
     scalePercent,
+    showSegmentOverlay,
     splitByPressure,
     useSpline,
     lockStrokeWidthOnZoom,
@@ -1266,6 +1412,76 @@ export function PdfViewer({
                     className="size-4"
                   />
                   Split by pressure
+                </label>
+
+                <label className="col-span-2 flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={showSegmentOverlay}
+                    onChange={(event) => setShowSegmentOverlay(event.target.checked)}
+                    className="size-4"
+                  />
+                  Segment overlay (diagnose connectors)
+                </label>
+
+                <label className="col-span-2 flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground">Pressure lift threshold (raw)</span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={0.2}
+                    step={0.0005}
+                    value={pressureLiftThresholdRaw}
+                    onChange={(event) => setPressureLiftThresholdRaw(Number(event.target.value))}
+                    className="w-20"
+                  />
+                  <input
+                    type="number"
+                    min={0}
+                    max={0.2}
+                    step={0.0005}
+                    value={pressureLiftThresholdRaw.toFixed(4)}
+                    onChange={(event) => {
+                      const nextValue = Number(event.target.value)
+                      if (!Number.isFinite(nextValue)) {
+                        return
+                      }
+                      setPressureLiftThresholdRaw(clamp(nextValue, 0, 0.2))
+                    }}
+                    className="h-7 w-16 rounded-md border border-border bg-background px-1.5 text-right text-xs"
+                  />
+                  <span className="w-14 text-right text-muted-foreground">
+                    {pressureLiftThresholdRaw.toFixed(4)}
+                  </span>
+                </label>
+
+                <label className="col-span-2 flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground">Connector reject length</span>
+                  <input
+                    type="range"
+                    min={8}
+                    max={80}
+                    step={1}
+                    value={connectorRejectLengthPx}
+                    onChange={(event) => setConnectorRejectLengthPx(Number(event.target.value))}
+                    className="w-20"
+                  />
+                  <input
+                    type="number"
+                    min={8}
+                    max={120}
+                    step={1}
+                    value={connectorRejectLengthPx}
+                    onChange={(event) => {
+                      const nextValue = Number(event.target.value)
+                      if (!Number.isFinite(nextValue)) {
+                        return
+                      }
+                      setConnectorRejectLengthPx(Math.round(clamp(nextValue, 8, 120)))
+                    }}
+                    className="h-7 w-16 rounded-md border border-border bg-background px-1.5 text-right text-xs"
+                  />
+                  <span className="w-14 text-right text-muted-foreground">{connectorRejectLengthPx}px</span>
                 </label>
               </div>
 

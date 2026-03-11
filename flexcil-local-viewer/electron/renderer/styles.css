@@ -81,6 +81,31 @@ h1 {
   padding: 10px 12px;
 }
 
+.notes-box h1,
+.notes-box h2,
+.notes-box h3,
+.notes-box h4,
+.notes-box h5,
+.notes-box h6 {
+  margin: 0 0 6px 0;
+  line-height: 1.3;
+}
+
+.notes-box p,
+.notes-box ul,
+.notes-box ol {
+  margin: 0 0 8px 0;
+}
+
+.notes-box ul,
+.notes-box ol {
+  padding-left: 18px;
+}
+
+.notes-box a {
+  color: #93c5fd;
+}
+
 .btn {
   border: 1px solid #334155;
   border-radius: 9px;

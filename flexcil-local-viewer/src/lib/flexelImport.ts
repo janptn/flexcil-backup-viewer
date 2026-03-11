@@ -1,6 +1,7 @@
 import JSZip from 'jszip'
 import { sha256 } from './hash'
 import { parseFlexcilDrawings } from './flexcilInk'
+import { normalizeDocumentId } from './documentsList'
 import type { DocumentRecord, UnknownMeta } from '../types'
 import type { DocumentsListMapping } from './documentsList'
 
@@ -265,7 +266,9 @@ export async function parseFlexelFiles(
       const normalizedPdfBytes = new Uint8Array(pdfBytes.byteLength)
       normalizedPdfBytes.set(pdfBytes)
       const sourceId = pdfEntry.name.split('/').pop() ?? crypto.randomUUID()
-      const mapping = documentsListMappings?.get(sourceId.toUpperCase())
+      const sourceIdUpper = sourceId.trim().toUpperCase()
+      const sourceIdNormalized = normalizeDocumentId(sourceId)
+      const mapping = documentsListMappings?.get(sourceIdUpper) ?? documentsListMappings?.get(sourceIdNormalized)
       const pdfHash = await sha256(pdfBytes)
       const id = sourceId.trim().length > 0 ? sourceId : pdfHash
       const title =

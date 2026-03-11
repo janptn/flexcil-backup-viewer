@@ -19,9 +19,53 @@ function setUpdateStatus(message) {
   updateStatusText.textContent = `Updater: ${message}`
 }
 
-function renderNotes(title, notesText) {
+function sanitizeNotesHtml(rawHtml) {
+  const template = document.createElement('template')
+  template.innerHTML = rawHtml
+
+  const blockedTags = ['script', 'style', 'iframe', 'object', 'embed', 'link', 'meta']
+  blockedTags.forEach((tagName) => {
+    template.content.querySelectorAll(tagName).forEach((node) => node.remove())
+  })
+
+  template.content.querySelectorAll('*').forEach((element) => {
+    Array.from(element.attributes).forEach((attribute) => {
+      const name = attribute.name.toLowerCase()
+      const value = attribute.value
+
+      if (name.startsWith('on')) {
+        element.removeAttribute(attribute.name)
+        return
+      }
+
+      if ((name === 'href' || name === 'src') && /^\s*javascript:/i.test(value)) {
+        element.removeAttribute(attribute.name)
+      }
+    })
+  })
+
+  return template.innerHTML
+}
+
+function looksLikeHtml(text) {
+  return /<\/?[a-z][\s\S]*>/i.test(text)
+}
+
+function renderNotes(title, notesText, options = {}) {
+  const { asHtml = false } = options
   whatsNewTitle.textContent = title
-  whatsNewBox.textContent = notesText && notesText.trim().length > 0 ? notesText : 'No notes yet.'
+
+  if (!notesText || notesText.trim().length === 0) {
+    whatsNewBox.textContent = 'No notes yet.'
+    return
+  }
+
+  if (asHtml) {
+    whatsNewBox.innerHTML = sanitizeNotesHtml(notesText)
+    return
+  }
+
+  whatsNewBox.textContent = notesText
 }
 
 function linesToNotes(lines) {
@@ -53,7 +97,7 @@ async function init() {
   if (localNotes && Array.isArray(localNotes.items) && localNotes.items.length > 0) {
     const localTitle = `${localNotes.title || "What's new"} (v${localNotes.version || state.appVersion || ''})`
       .replace(/\s+\(v\)$/, '')
-    renderNotes(localTitle, linesToNotes(localNotes.items))
+    renderNotes(localTitle, linesToNotes(localNotes.items), { asHtml: false })
   }
 
   openBtn.addEventListener('click', async () => {
@@ -105,7 +149,9 @@ async function init() {
 
     if (typeof payload.releaseNotes === 'string' && payload.releaseNotes.trim().length > 0) {
       const version = typeof payload.version === 'string' ? payload.version : 'new'
-      renderNotes(`Update notes (v${version})`, payload.releaseNotes)
+      renderNotes(`Update notes (v${version})`, payload.releaseNotes, {
+        asHtml: looksLikeHtml(payload.releaseNotes)
+      })
     }
 
     if (payload.state === 'downloaded' || payload.canInstall) {

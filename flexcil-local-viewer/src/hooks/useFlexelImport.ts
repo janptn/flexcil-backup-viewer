@@ -29,20 +29,28 @@ function isSupportedImportName(name: string): boolean {
   return lower.endsWith('.flx') || lower.endsWith('.list')
 }
 
+function isSupportedArchiveName(name: string): boolean {
+  const lower = name.toLowerCase()
+  return lower.endsWith('.zip') || lower.endsWith('.flex')
+}
+
 async function expandImportFiles(files: File[]): Promise<File[]> {
   const expanded: File[] = []
 
   for (const file of files) {
-    const lower = file.name.toLowerCase()
-    if (lower.endsWith('.zip')) {
-      const zip = await JSZip.loadAsync(await file.arrayBuffer())
-      const entries = Object.values(zip.files).filter((entry) => !entry.dir && isSupportedImportName(entry.name))
+    if (isSupportedArchiveName(file.name)) {
+      try {
+        const zip = await JSZip.loadAsync(await file.arrayBuffer())
+        const entries = Object.values(zip.files).filter((entry) => !entry.dir && isSupportedImportName(entry.name))
 
-      for (const entry of entries) {
-        const blob = await entry.async('blob')
-        const fallbackName = entry.name.split('/').pop() ?? entry.name
-        const fileName = fallbackName.length > 0 ? fallbackName : entry.name
-        expanded.push(new File([blob], fileName, { type: 'application/octet-stream' }))
+        for (const entry of entries) {
+          const blob = await entry.async('blob')
+          const fallbackName = entry.name.split('/').pop() ?? entry.name
+          const fileName = fallbackName.length > 0 ? fallbackName : entry.name
+          expanded.push(new File([blob], fileName, { type: 'application/octet-stream' }))
+        }
+      } catch {
+        // Ignore invalid archive files and continue importing remaining inputs.
       }
       continue
     }

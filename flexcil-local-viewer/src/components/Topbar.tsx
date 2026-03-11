@@ -76,7 +76,7 @@ export function Topbar({
               isBackupDragActive ? 'border-accent bg-accent/10 text-accent' : 'border-border bg-background text-muted-foreground hover:bg-muted'
             }`}
           >
-            Drop ZIP/FLX/LIST (or folder) here
+            Drop ZIP/FLEX/FLX/LIST (or folder) here
           </div>
 
           <button

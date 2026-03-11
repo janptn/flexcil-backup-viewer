@@ -1,7 +1,9 @@
 import clsx from 'clsx'
-import { ChevronDown, ChevronRight, History, Library } from 'lucide-react'
-import { useMemo, useState } from 'react'
-import type { CollectionFilter } from '../types'
+import { ChevronDown, ChevronRight, FileText, History, Library } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { formatDate } from '../lib/format'
+import type { CollectionFilter, DocumentRecord } from '../types'
 
 const SIDEBAR_EXPANDED_KEY = 'flexcil-library-expanded-folders-v1'
 
@@ -34,6 +36,7 @@ interface SidebarProps {
   selected: CollectionFilter
   onSelect: (next: CollectionFilter) => void
   folderGroups: string[]
+  recentDocuments: DocumentRecord[]
 }
 
 interface FolderNode {
@@ -121,11 +124,11 @@ function FolderTreeItem({
             onSelect({ type: 'folder', value: node.value })
           }}
           className={clsx(
-            'flex min-h-8 flex-1 items-center rounded px-2 py-1 text-left text-sm transition',
+            'flex min-h-8 min-w-0 flex-1 items-center rounded px-2 py-1 text-left text-sm transition',
             isActive ? 'bg-accent text-white' : 'hover:bg-muted',
           )}
         >
-          {node.name}
+          <span className="truncate">{node.name}</span>
         </button>
       </div>
 
@@ -174,7 +177,48 @@ function ItemButton({
   )
 }
 
-export function Sidebar({ selected, onSelect, folderGroups }: SidebarProps) {
+function RecentDocumentItem({ document }: { document: DocumentRecord }) {
+  const [thumbnailUrl, setThumbnailUrl] = useState<string | undefined>()
+
+  useEffect(() => {
+    if (!document.thumbnailBlob) {
+      setThumbnailUrl(undefined)
+      return
+    }
+
+    const url = URL.createObjectURL(document.thumbnailBlob)
+    setThumbnailUrl(url)
+
+    return () => {
+      URL.revokeObjectURL(url)
+    }
+  }, [document.thumbnailBlob])
+
+  return (
+    <Link
+      to={`/workspace?doc=${encodeURIComponent(document.id)}`}
+      className="flex items-center gap-2 rounded-lg px-2 py-1.5 transition hover:bg-muted"
+      title={document.title}
+    >
+      <div className="w-[44px] shrink-0 overflow-hidden rounded border border-border bg-muted aspect-[1/1.414]">
+        {thumbnailUrl ? (
+          <img src={thumbnailUrl} alt={document.title} className="h-full w-full object-cover" />
+        ) : (
+          <div className="flex h-full items-center justify-center text-muted-foreground">
+            <FileText className="size-4" />
+          </div>
+        )}
+      </div>
+
+      <div className="min-w-0">
+        <p className="line-clamp-1 text-xs font-medium text-foreground">{document.title}</p>
+        <p className="text-[11px] text-muted-foreground">{formatDate(document.createdAt || document.addedAt)}</p>
+      </div>
+    </Link>
+  )
+}
+
+export function Sidebar({ selected, onSelect, folderGroups, recentDocuments }: SidebarProps) {
   const folderTree = useMemo(() => buildFolderTree(folderGroups), [folderGroups])
   const [expanded, setExpanded] = useState<Set<string>>(() => loadExpandedFolders())
 
@@ -192,8 +236,8 @@ export function Sidebar({ selected, onSelect, folderGroups }: SidebarProps) {
   }
 
   return (
-    <aside className="w-full border-b border-border bg-card px-3 py-4 md:w-72 md:border-b-0 md:border-r md:px-4">
-      <div className="space-y-4">
+    <aside className="w-full border-b border-border bg-card px-3 py-4 md:w-72 md:border-b-0 md:border-r md:px-4 md:min-h-0 md:overflow-hidden">
+      <div className="space-y-4 md:max-h-full md:overflow-x-hidden md:overflow-y-auto md:pr-1">
         <div className="space-y-1">
           <p className="px-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Library</p>
           <ItemButton
@@ -234,6 +278,19 @@ export function Sidebar({ selected, onSelect, folderGroups }: SidebarProps) {
         {folderTree.length === 0 && (
           <div className="px-3 text-xs text-muted-foreground">
             No folders found in imported metadata.
+          </div>
+        )}
+
+        {recentDocuments.length > 0 && (
+          <div className="space-y-1">
+            <p className="px-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Letzte Dokumente
+            </p>
+            <div className="space-y-0.5">
+              {recentDocuments.map((document) => (
+                <RecentDocumentItem key={document.id} document={document} />
+              ))}
+            </div>
           </div>
         )}
       </div>

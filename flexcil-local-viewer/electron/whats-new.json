@@ -1,10 +1,12 @@
 {
   "title": "What's new",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "items": [
-    "Electron launcher now starts and stops the local server reliably.",
-    "Built-in update controls: Check Update and Install Update.",
-    "Improved library persistence (folders, filters, scroll position).",
-    "Document cards now show page count and real document date metadata."
+    "Added support for FLEX archive imports and improved extraction reliability for manual backup formats.",
+    "Fixed import deduplication logic so newly created documents are no longer skipped when base PDF content is similar.",
+    "Improved folder mapping updates: document structure from documents.list now refreshes correctly on repeated imports.",
+    "Added a Recent Documents section to the sidebar with A4-style thumbnail previews, title, and date.",
+    "Made the sidebar scrollable and refined scrollbar styling to be slimmer and less visually intrusive.",
+    "Improved ink diagnostics with segment overlay tooling and refined stroke filtering behavior."
   ]
 }

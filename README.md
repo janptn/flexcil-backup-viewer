@@ -21,6 +21,10 @@ The application allows you to open official Flexcil backup archives on your comp
 > ⚠️ This project is not affiliated with, endorsed by, or connected to Flexcil in any way.
 
 ---
+ToDo-List
+- Image Support
+- better ink rendering
+---
 
 ## ✨ Features
 

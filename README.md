@@ -22,8 +22,12 @@ The application allows you to open official Flexcil backup archives on your comp
 
 ---
 ToDo-List
-- Image Support
-- better ink rendering
+- Image Support ✔️
+- Folder Structure ✔️
+- Launcher with Updater ✔️
+- MacOS Build (Have someone a mac? I can build a MacOS dmg (also have Apple Developer Account), but have no mac yet to test.)
+- Shape recognition -- 70%
+- better ink rendering -- 50%
 ---
 
 ## ✨ Features

@@ -84,10 +84,17 @@ export async function saveDocumentRecords(
     const nextInkDrawings = hasKeys(incoming.inkDrawingsByPageKey)
       ? incoming.inkDrawingsByPageKey
       : existing.inkDrawingsByPageKey
+    const nextImageAnnotations = hasKeys(incoming.imageAnnotationsByPageKey)
+      ? incoming.imageAnnotationsByPageKey
+      : existing.imageAnnotationsByPageKey
+    const nextShapeAnnotations = hasKeys(incoming.shapeAnnotationsByPageKey)
+      ? incoming.shapeAnnotationsByPageKey
+      : existing.shapeAnnotationsByPageKey
     const nextPageCount =
       typeof existing.pageCount === 'number' && existing.pageCount > 0
         ? existing.pageCount
         : incoming.pageCount
+    const nextParserVersion = incoming.parserVersion ?? existing.parserVersion
 
     return {
       ...existing,
@@ -101,6 +108,9 @@ export async function saveDocumentRecords(
       pageCount: nextPageCount,
       inkPageKeys: nextInkPageKeys,
       inkDrawingsByPageKey: nextInkDrawings,
+      imageAnnotationsByPageKey: nextImageAnnotations,
+      shapeAnnotationsByPageKey: nextShapeAnnotations,
+      parserVersion: nextParserVersion,
     }
   }
 
@@ -114,8 +124,11 @@ export async function saveDocumentRecords(
       hasThumbnail: Boolean(left.thumbnailBlob),
       hasFullText: Boolean(left.fullText && left.fullText.trim().length > 0),
       pageCount: left.pageCount ?? 0,
+      parserVersion: left.parserVersion ?? '',
       inkPageKeys: stableJson(left.inkPageKeys),
       inkDrawingsByPageKey: stableJson(left.inkDrawingsByPageKey),
+      imageAnnotationsByPageKey: stableJson(left.imageAnnotationsByPageKey),
+      shapeAnnotationsByPageKey: stableJson(left.shapeAnnotationsByPageKey),
     }) ===
       JSON.stringify({
         title: right.title,
@@ -126,8 +139,11 @@ export async function saveDocumentRecords(
         hasThumbnail: Boolean(right.thumbnailBlob),
         hasFullText: Boolean(right.fullText && right.fullText.trim().length > 0),
         pageCount: right.pageCount ?? 0,
+        parserVersion: right.parserVersion ?? '',
         inkPageKeys: stableJson(right.inkPageKeys),
         inkDrawingsByPageKey: stableJson(right.inkDrawingsByPageKey),
+        imageAnnotationsByPageKey: stableJson(right.imageAnnotationsByPageKey),
+        shapeAnnotationsByPageKey: stableJson(right.shapeAnnotationsByPageKey),
       })
   }
 

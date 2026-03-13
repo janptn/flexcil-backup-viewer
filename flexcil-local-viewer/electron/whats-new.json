@@ -1,12 +1,12 @@
 {
   "title": "What's new",
-  "version": "1.2.4",
+  "version": "1.2.5",
   "items": [
-    "Added support for FLEX archive imports and improved extraction reliability for manual backup formats.",
-    "Fixed import deduplication logic so newly created documents are no longer skipped when base PDF content is similar.",
-    "Improved folder mapping updates: document structure from documents.list now refreshes correctly on repeated imports.",
-    "Added a Recent Documents section to the sidebar with A4-style thumbnail previews, title, and date.",
-    "Made the sidebar scrollable and refined scrollbar styling to be slimmer and less visually intrusive.",
-    "Improved ink diagnostics with segment overlay tooling and refined stroke filtering behavior."
+    "Extended import compatibility for backup containers and improved document/folder mapping updates across repeated imports.",
+    "Improved overlay rendering pipeline for handwriting, image annotations, and shape annotations.",
+    "Added annotated PDF export improvements so overlays are preserved in downloads.",
+    "Added advanced ink/shape debug controls with persistent defaults for decode mode, stroke width, and rendering diagnostics.",
+    "Added parser-version based update detection so re-importing updates existing documents after parser/rendering changes.",
+    "Form rendering improvements are currently beta: line, arrow, rectangle, pentagon, circle, and spline handling has been significantly improved but is still being fine-tuned."
   ]
 }

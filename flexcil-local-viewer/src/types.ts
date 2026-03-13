@@ -13,6 +13,46 @@ export interface FlexcilInkStroke {
   strokeStyle: string
   lineWidth: number
   rotate?: number
+  sourceFigure?: number
+  sourceMode?: number
+  isGeneratedFigure?: boolean
+}
+
+export interface FlexcilImageCropBox {
+  xNorm: number
+  yNorm: number
+  widthNorm: number
+  heightNorm: number
+}
+
+export interface FlexcilImageAnnotation {
+  key: string
+  xNorm: number
+  yNorm: number
+  widthNorm: number
+  heightNorm: number
+  rotate?: number
+  cropBox?: FlexcilImageCropBox
+  imageBlob: Blob
+}
+
+export interface FlexcilShapePoint {
+  xNorm: number
+  yNorm: number
+}
+
+export interface FlexcilShapeAnnotation {
+  key: string
+  shapeType: number
+  points: FlexcilShapePoint[]
+  controlPoints?: FlexcilShapePoint[]
+  widthNorm?: number
+  strokeStyle: string
+  fillStyle?: string
+  dashType: number
+  lineWidth: number
+  rotate?: number
+  isClosed: boolean
 }
 
 export interface DocumentRecord {
@@ -31,6 +71,9 @@ export interface DocumentRecord {
   fullText?: string
   inkPageKeys?: Record<string, string>
   inkDrawingsByPageKey?: Record<string, FlexcilInkStroke[]>
+  imageAnnotationsByPageKey?: Record<string, FlexcilImageAnnotation[]>
+  shapeAnnotationsByPageKey?: Record<string, FlexcilShapeAnnotation[]>
+  parserVersion?: string
 }
 
 export type CollectionFilter =

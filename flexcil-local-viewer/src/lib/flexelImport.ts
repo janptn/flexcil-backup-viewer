@@ -1,8 +1,14 @@
 import JSZip from 'jszip'
 import { sha256 } from './hash'
-import { parseFlexcilDrawings } from './flexcilInk'
+import { argbToRgbaCss, parseFlexcilDrawings } from './flexcilInk'
 import { normalizeDocumentId } from './documentsList'
-import type { DocumentRecord, UnknownMeta } from '../types'
+import type {
+  DocumentRecord,
+  FlexcilImageAnnotation,
+  FlexcilShapeAnnotation,
+  FlexcilShapePoint,
+  UnknownMeta,
+} from '../types'
 import type { DocumentsListMapping } from './documentsList'
 
 const PDF_ENTRY_PATTERN = /^attachment\/PDF\/[^/]+$/i
@@ -20,12 +26,49 @@ const FOLDER_KEYS = new Set([
 ])
 const TITLE_KEYS = ['title', 'name', 'documentTitle']
 const DATE_KEYS = ['createdAt', 'updatedAt', 'date', 'modifiedAt', 'created', 'timestamp']
+const PARSER_VERSION = '2026-03-13-forms-render-v1'
 
 interface PageIndexEntry {
   attachmentPage?: {
     index?: number
   }
   key?: string
+}
+
+interface RawImageFrame {
+  x?: number
+  y?: number
+  width?: number
+  height?: number
+}
+
+interface RawImageObject {
+  key?: string
+  frame?: RawImageFrame
+  cropBox?: RawImageFrame
+  rotate?: number
+}
+
+interface RawShapeObject {
+  key?: string
+  shapeType?: number
+  points?: string
+  rotate?: number
+  start?: {
+    x?: number
+    y?: number
+  }
+  controlPoints?: Array<{
+    x?: number
+    y?: number
+  }>
+  dashtype?: number
+  fillColor?: number
+  strokeColor?: number
+  scale?: {
+    x?: number
+    y?: number
+  }
 }
 
 function safeJsonParse(content: string): unknown {
@@ -188,6 +231,110 @@ function findDrawingsEntry(zip: JSZip, pageKey: string): JSZip.JSZipObject | und
   return Object.values(zip.files).find((entry) => !entry.dir && entry.name.toLowerCase().endsWith(suffix))
 }
 
+function findImagesEntry(zip: JSZip, pageKey: string): JSZip.JSZipObject | undefined {
+  const suffix = `objects/${pageKey}.images`.toLowerCase()
+  return Object.values(zip.files).find((entry) => !entry.dir && entry.name.toLowerCase().endsWith(suffix))
+}
+
+function findShapesEntry(zip: JSZip, pageKey: string): JSZip.JSZipObject | undefined {
+  const suffix = `objects/${pageKey}.shapes`.toLowerCase()
+  return Object.values(zip.files).find((entry) => !entry.dir && entry.name.toLowerCase().endsWith(suffix))
+}
+
+function findImageAttachmentEntry(zip: JSZip, imageKey: string): JSZip.JSZipObject | undefined {
+  const suffix = `attachment/image/${imageKey}`.toLowerCase()
+  return Object.values(zip.files).find((entry) => !entry.dir && entry.name.toLowerCase().endsWith(suffix))
+}
+
+function clamp01(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 0
+  }
+  return Math.max(0, Math.min(1, value))
+}
+
+function base64ToBytes(value: string): Uint8Array {
+  const binary = atob(value)
+  const bytes = new Uint8Array(binary.length)
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index)
+  }
+  return bytes
+}
+
+function computeShapeLineWidth(scale: RawShapeObject['scale']): number {
+  const xScale = typeof scale?.x === 'number' ? scale.x : 1
+  const yScale = typeof scale?.y === 'number' ? scale.y : xScale
+  const average = (xScale + yScale) / 2
+  if (!Number.isFinite(average)) {
+    return 2
+  }
+  return Math.max(0.8, Math.min(12, 2 * average))
+}
+
+function decodeShapePoints(
+  base64: string,
+  start: { x: number; y: number },
+): { points: FlexcilShapePoint[]; widthNorm?: number } {
+  if (!base64 || base64.trim().length === 0) {
+    return { points: [{ xNorm: start.x, yNorm: start.y }] }
+  }
+
+  const bytes = base64ToBytes(base64)
+  if (bytes.byteLength < 16) {
+    return { points: [{ xNorm: start.x, yNorm: start.y }] }
+  }
+
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  const expectedCount = view.getUint32(0, true)
+
+  // Observed format in Flexcil .shapes:
+  //   uint32 count, followed by count entries of float32(dx), float32(dy), float32(extra)
+  // The third float is metadata and not geometry.
+  const tripletPayloadBytes = bytes.byteLength - 4
+  if (tripletPayloadBytes >= 12 && tripletPayloadBytes % 12 === 0) {
+    const tripletCount = tripletPayloadBytes / 12
+    if (expectedCount === 0 || expectedCount === tripletCount) {
+      const points: FlexcilShapePoint[] = []
+      const widths: number[] = []
+      for (let offset = 4; offset + 12 <= bytes.byteLength; offset += 12) {
+        const dx = view.getFloat32(offset, true)
+        const dy = view.getFloat32(offset + 4, true)
+        const extra = view.getFloat32(offset + 8, true)
+        points.push({ xNorm: start.x + dx, yNorm: start.y + dy })
+        if (Number.isFinite(extra) && extra > 0) {
+          widths.push(extra)
+        }
+      }
+      if (points.length > 0) {
+        const widthNorm = widths.length > 0 ? widths.reduce((sum, value) => sum + value, 0) / widths.length : undefined
+        return { points, widthNorm }
+      }
+    }
+  }
+
+  // Fallback for unknown/legacy shape encodings.
+  if ((bytes.byteLength - 4) % 8 === 0) {
+    const points: FlexcilShapePoint[] = []
+    for (let offset = 4; offset + 8 <= bytes.byteLength; offset += 8) {
+      const dx = view.getFloat32(offset, true)
+      const dy = view.getFloat32(offset + 4, true)
+      points.push({ xNorm: start.x + dx, yNorm: start.y + dy })
+    }
+    if (points.length > 0) {
+      return { points }
+    }
+  }
+
+  return { points: [{ xNorm: start.x, yNorm: start.y }] }
+}
+
+function isShapeClosed(shapeType: number): boolean {
+  // In observed archives, type 9 encodes triangular arrow heads.
+  // Other types are often open polylines and should not be force-closed.
+  return shapeType === 9
+}
+
 async function extractInkDrawingsByPageKey(
   zip: JSZip,
   pageKeyMappings: Record<string, string>,
@@ -214,6 +361,171 @@ async function extractInkDrawingsByPageKey(
   }
 
   return drawingsByPageKey
+}
+
+async function extractImageAnnotationsByPageKey(
+  zip: JSZip,
+  pageKeyMappings: Record<string, string>,
+): Promise<Record<string, FlexcilImageAnnotation[]>> {
+  const uniquePageKeys = Array.from(new Set(Object.values(pageKeyMappings)))
+  const imageAnnotationsByPageKey: Record<string, FlexcilImageAnnotation[]> = {}
+
+  for (const pageKey of uniquePageKeys) {
+    const imagesEntry = findImagesEntry(zip, pageKey)
+    if (!imagesEntry) {
+      continue
+    }
+
+    try {
+      const raw = await imagesEntry.async('string')
+      const parsed = safeJsonParse(raw)
+      if (!Array.isArray(parsed)) {
+        continue
+      }
+
+      const annotations: FlexcilImageAnnotation[] = []
+      for (const item of parsed) {
+        if (!item || typeof item !== 'object') {
+          continue
+        }
+
+        const imageObject = item as RawImageObject
+        const imageKey = typeof imageObject.key === 'string' ? imageObject.key.trim() : ''
+        const frame = imageObject.frame
+        if (!imageKey || !frame) {
+          continue
+        }
+
+        const attachmentEntry = findImageAttachmentEntry(zip, imageKey)
+        if (!attachmentEntry) {
+          continue
+        }
+
+        const bytes = await attachmentEntry.async('uint8array')
+        const normalizedBytes = new Uint8Array(bytes.byteLength)
+        normalizedBytes.set(bytes)
+        const frameX = Number(frame.x)
+        const frameY = Number(frame.y)
+        const frameW = Number(frame.width)
+        const frameH = Number(frame.height)
+        if (!Number.isFinite(frameW) || !Number.isFinite(frameH) || frameW <= 0 || frameH <= 0) {
+          continue
+        }
+
+        const crop = imageObject.cropBox
+        const cropX = Number(crop?.x)
+        const cropY = Number(crop?.y)
+        const cropW = Number(crop?.width)
+        const cropH = Number(crop?.height)
+
+        annotations.push({
+          key: imageKey,
+          xNorm: frameX,
+          yNorm: frameY,
+          widthNorm: frameW,
+          heightNorm: frameH,
+          rotate: typeof imageObject.rotate === 'number' ? imageObject.rotate : undefined,
+          cropBox:
+            Number.isFinite(cropX) && Number.isFinite(cropY) && Number.isFinite(cropW) && Number.isFinite(cropH)
+              ? {
+                  xNorm: clamp01(cropX),
+                  yNorm: clamp01(cropY),
+                  widthNorm: clamp01(cropW),
+                  heightNorm: clamp01(cropH),
+                }
+              : undefined,
+          imageBlob: new Blob([normalizedBytes], { type: 'image/jpeg' }),
+        })
+      }
+
+      if (annotations.length > 0) {
+        imageAnnotationsByPageKey[pageKey] = annotations
+      }
+    } catch {
+      continue
+    }
+  }
+
+  return imageAnnotationsByPageKey
+}
+
+async function extractShapeAnnotationsByPageKey(
+  zip: JSZip,
+  pageKeyMappings: Record<string, string>,
+): Promise<Record<string, FlexcilShapeAnnotation[]>> {
+  const uniquePageKeys = Array.from(new Set(Object.values(pageKeyMappings)))
+  const shapeAnnotationsByPageKey: Record<string, FlexcilShapeAnnotation[]> = {}
+
+  for (const pageKey of uniquePageKeys) {
+    const shapesEntry = findShapesEntry(zip, pageKey)
+    if (!shapesEntry) {
+      continue
+    }
+
+    try {
+      const raw = await shapesEntry.async('string')
+      const parsed = safeJsonParse(raw)
+      if (!Array.isArray(parsed)) {
+        continue
+      }
+
+      const annotations: FlexcilShapeAnnotation[] = []
+      for (const item of parsed) {
+        if (!item || typeof item !== 'object') {
+          continue
+        }
+
+        const shapeObject = item as RawShapeObject
+        const key = typeof shapeObject.key === 'string' ? shapeObject.key.trim() : ''
+        const shapeType = Number(shapeObject.shapeType)
+        const startX = Number(shapeObject.start?.x)
+        const startY = Number(shapeObject.start?.y)
+        const encodedPoints = typeof shapeObject.points === 'string' ? shapeObject.points : ''
+
+        if (!key || !Number.isFinite(shapeType) || !Number.isFinite(startX) || !Number.isFinite(startY)) {
+          continue
+        }
+
+        const geometry = decodeShapePoints(encodedPoints, { x: startX, y: startY })
+        const points = geometry.points
+        if (points.length < 2) {
+          continue
+        }
+
+        const controlPoints = Array.isArray(shapeObject.controlPoints)
+          ? shapeObject.controlPoints
+              .map((point) => ({ xNorm: Number(point.x), yNorm: Number(point.y) }))
+              .filter((point) => Number.isFinite(point.xNorm) && Number.isFinite(point.yNorm))
+          : []
+
+        const strokeColor = typeof shapeObject.strokeColor === 'number' ? shapeObject.strokeColor : 0xff000000
+        const fillColor = typeof shapeObject.fillColor === 'number' ? shapeObject.fillColor : 0
+        const fillAlpha = ((fillColor >>> 24) & 0xff) / 255
+
+        annotations.push({
+          key,
+          shapeType,
+          points,
+          controlPoints: controlPoints.length > 0 ? controlPoints : undefined,
+          widthNorm: geometry.widthNorm,
+          strokeStyle: argbToRgbaCss(strokeColor),
+          fillStyle: fillAlpha > 0 ? argbToRgbaCss(fillColor) : undefined,
+          dashType: Number.isFinite(shapeObject.dashtype) ? Number(shapeObject.dashtype) : 0,
+          lineWidth: computeShapeLineWidth(shapeObject.scale),
+          rotate: typeof shapeObject.rotate === 'number' ? shapeObject.rotate : undefined,
+          isClosed: isShapeClosed(shapeType),
+        })
+      }
+
+      if (annotations.length > 0) {
+        shapeAnnotationsByPageKey[pageKey] = annotations
+      }
+    } catch {
+      continue
+    }
+  }
+
+  return shapeAnnotationsByPageKey
 }
 
 export async function parseFlexelFiles(
@@ -255,6 +567,8 @@ export async function parseFlexelFiles(
     const pagesIndexRaw = metaItems.find(([name]) => name.toLowerCase().endsWith('pages.index'))?.[1]
     const inkPageKeys = extractPageKeyMappings(pagesIndexRaw)
     const inkDrawingsByPageKey = await extractInkDrawingsByPageKey(zip, inkPageKeys)
+    const imageAnnotationsByPageKey = await extractImageAnnotationsByPageKey(zip, inkPageKeys)
+    const shapeAnnotationsByPageKey = await extractShapeAnnotationsByPageKey(zip, inkPageKeys)
     const thumbnailEntry = pickThumbnailEntry(zip)
     const thumbnailBytes = thumbnailEntry ? await thumbnailEntry.async('uint8array') : undefined
     const titleFromMeta = searchFirstString(meta, TITLE_KEYS)
@@ -299,6 +613,11 @@ export async function parseFlexelFiles(
         inkPageKeys: Object.keys(inkPageKeys).length > 0 ? inkPageKeys : undefined,
         inkDrawingsByPageKey:
           Object.keys(inkDrawingsByPageKey).length > 0 ? inkDrawingsByPageKey : undefined,
+        imageAnnotationsByPageKey:
+          Object.keys(imageAnnotationsByPageKey).length > 0 ? imageAnnotationsByPageKey : undefined,
+        shapeAnnotationsByPageKey:
+          Object.keys(shapeAnnotationsByPageKey).length > 0 ? shapeAnnotationsByPageKey : undefined,
+        parserVersion: PARSER_VERSION,
       })
     }
   }

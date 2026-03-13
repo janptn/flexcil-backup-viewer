@@ -8,6 +8,7 @@ interface FlexcilStartPoint {
 interface RawDrawingStroke {
   start?: FlexcilStartPoint
   points?: string
+  figure?: number
   strokeColor?: number
   scale?: {
     x?: number
@@ -276,17 +277,25 @@ export function parseFlexcilDrawings(raw: unknown): FlexcilInkStroke[] {
 
     try {
       const variants = decodeFlexcilPointVariants(encodedPoints, start)
-      if (variants.auto.length < 2) {
+      const figure = typeof stroke.figure === 'number' ? stroke.figure : undefined
+      const mode = typeof stroke.mode === 'number' ? stroke.mode : undefined
+      const isGeneratedFigure = figure === 1 || mode === 1
+
+      const preferredPoints = mode === 5 ? variants.absolute : variants.auto
+      if (preferredPoints.length < 2) {
         continue
       }
 
       strokes.push({
-        points: variants.auto,
+        points: preferredPoints,
         pointsAbsolute: variants.absolute,
         pointsCumulative: variants.cumulative,
         strokeStyle: argbToRgbaCss(typeof stroke.strokeColor === 'number' ? stroke.strokeColor : -16777216),
         lineWidth: computeLineWidth(stroke.scale),
         rotate: typeof stroke.rotate === 'number' ? stroke.rotate : undefined,
+        sourceFigure: figure,
+        sourceMode: mode,
+        isGeneratedFigure,
       })
     } catch {
       continue

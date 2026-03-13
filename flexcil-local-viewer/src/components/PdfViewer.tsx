@@ -18,8 +18,16 @@ import {
   PDFLinkService,
   PDFViewer as PdfJsViewer,
 } from 'pdfjs-dist/legacy/web/pdf_viewer.mjs'
+import { PDFDocument } from 'pdf-lib'
 import workerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
-import type { DocumentRecord, FlexcilInkStroke, PdfSearchHit, TabViewState } from '../types'
+import type {
+  DocumentRecord,
+  FlexcilImageAnnotation,
+  FlexcilInkStroke,
+  FlexcilShapeAnnotation,
+  PdfSearchHit,
+  TabViewState,
+} from '../types'
 
 GlobalWorkerOptions.workerSrc = workerUrl
 
@@ -42,6 +50,7 @@ interface PdfViewerProps {
 const MIN_SCALE = 0.5
 const MAX_SCALE = 4
 const ZOOM_STEP = 0.2
+const INK_DEBUG_GLOBAL_SETTINGS_KEY = 'flexcil-ink-debug-global-settings-v5'
 
 type SearchHit = PdfSearchHit
 
@@ -50,6 +59,93 @@ interface TextContentItemLike {
 }
 
 type InkDecodeMode = 'auto' | 'absolute' | 'cumulative'
+type DrawingDecodeMode = 'auto' | 'absolute' | 'cumulative'
+
+interface InkDebugGlobalSettings {
+  inkDecodeMode: InkDecodeMode
+  drawingsMode5DecodeMode: DrawingDecodeMode
+  drawingsFigure1DecodeMode: DrawingDecodeMode
+  flipInkY: boolean
+  splitByPressure: boolean
+  pressureLiftThresholdRaw: number
+  connectorRejectLengthPx: number
+  inkOffsetXPercent: number
+  inkOffsetYPercent: number
+  inkScaleXPercent: number
+  inkScaleYPercent: number
+  showSegmentOverlay: boolean
+  enableInkSmoothing: boolean
+  inkSmoothingPercent: number
+  inkStrokeWidthPercent: number
+  inkOpacityPercent: number
+  simplifyEpsilonPx: number
+  chaikinIterations: number
+  useSpline: boolean
+  curveTensionPercent: number
+  enableOneEuroFilter: boolean
+  oneEuroMinCutoff: number
+  oneEuroBeta: number
+  pressureGamma: number
+  speedSensitivity: number
+  lockStrokeWidthOnZoom: boolean
+}
+
+const DEFAULT_INK_DEBUG_SETTINGS: InkDebugGlobalSettings = {
+  inkDecodeMode: 'absolute',
+  drawingsMode5DecodeMode: 'absolute',
+  drawingsFigure1DecodeMode: 'absolute',
+  flipInkY: false,
+  splitByPressure: false,
+  pressureLiftThresholdRaw: 0,
+  connectorRejectLengthPx: 28,
+  inkOffsetXPercent: 0,
+  inkOffsetYPercent: 0.4,
+  inkScaleXPercent: 100,
+  inkScaleYPercent: 71.5,
+  showSegmentOverlay: false,
+  enableInkSmoothing: true,
+  inkSmoothingPercent: 50,
+  inkStrokeWidthPercent: 65,
+  inkOpacityPercent: 100,
+  simplifyEpsilonPx: 0,
+  chaikinIterations: 0,
+  useSpline: true,
+  curveTensionPercent: 50,
+  enableOneEuroFilter: false,
+  oneEuroMinCutoff: 1,
+  oneEuroBeta: 0.4,
+  pressureGamma: 1.6,
+  speedSensitivity: 20,
+  lockStrokeWidthOnZoom: true,
+}
+
+function loadInkDebugGlobalSettings(): InkDebugGlobalSettings {
+  try {
+    const raw = localStorage.getItem(INK_DEBUG_GLOBAL_SETTINGS_KEY)
+    if (!raw) {
+      return DEFAULT_INK_DEBUG_SETTINGS
+    }
+
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') {
+      return DEFAULT_INK_DEBUG_SETTINGS
+    }
+
+    return {
+      ...DEFAULT_INK_DEBUG_SETTINGS,
+      ...parsed,
+    }
+  } catch {
+    return DEFAULT_INK_DEBUG_SETTINGS
+  }
+}
+
+function saveInkDebugGlobalSettings(settings: InkDebugGlobalSettings) {
+  try {
+    localStorage.setItem(INK_DEBUG_GLOBAL_SETTINGS_KEY, JSON.stringify(settings))
+  } catch {
+  }
+}
 
 interface InkInspectorStats {
   strokeCount: number
@@ -292,6 +388,7 @@ export function PdfViewer({
   initialViewState,
   onViewStateChange,
 }: PdfViewerProps) {
+  const globalInkDebugSettings = useMemo(() => loadInkDebugGlobalSettings(), [])
   const containerRef = useRef<HTMLDivElement>(null)
   const viewerRef = useRef<HTMLDivElement>(null)
   const viewerInstanceRef = useRef<PdfJsViewer | null>(null)
@@ -306,34 +403,101 @@ export function PdfViewer({
   const [searchHits, setSearchHits] = useState<SearchHit[]>([])
   const [internalSelectedMatchIndex, setInternalSelectedMatchIndex] = useState(0)
   const [isSearching, setIsSearching] = useState(false)
+  const [isDownloadingAnnotatedPdf, setIsDownloadingAnnotatedPdf] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showAnnotations, setShowAnnotations] = useState(true)
-  const [inkDecodeMode, setInkDecodeMode] = useState<InkDecodeMode>('absolute')
-  const [flipInkY, setFlipInkY] = useState(false)
-  const [splitByPressure, setSplitByPressure] = useState(false)
-  const [pressureLiftThresholdRaw, setPressureLiftThresholdRaw] = useState(0.01)
-  const [connectorRejectLengthPx, setConnectorRejectLengthPx] = useState(28)
-  const [inkOffsetXPercent, setInkOffsetXPercent] = useState(0)
-  const [inkOffsetYPercent, setInkOffsetYPercent] = useState(-1)
-  const [inkScaleXPercent, setInkScaleXPercent] = useState(100)
-  const [inkScaleYPercent, setInkScaleYPercent] = useState(71.5)
+  const [inkDecodeMode, setInkDecodeMode] = useState<InkDecodeMode>(globalInkDebugSettings.inkDecodeMode)
+  const [drawingsMode5DecodeMode, setDrawingsMode5DecodeMode] = useState<DrawingDecodeMode>(
+    globalInkDebugSettings.drawingsMode5DecodeMode,
+  )
+  const [drawingsFigure1DecodeMode, setDrawingsFigure1DecodeMode] = useState<DrawingDecodeMode>(
+    globalInkDebugSettings.drawingsFigure1DecodeMode,
+  )
+  const [flipInkY, setFlipInkY] = useState(globalInkDebugSettings.flipInkY)
+  const [splitByPressure, setSplitByPressure] = useState(globalInkDebugSettings.splitByPressure)
+  const [pressureLiftThresholdRaw, setPressureLiftThresholdRaw] = useState(globalInkDebugSettings.pressureLiftThresholdRaw)
+  const [connectorRejectLengthPx, setConnectorRejectLengthPx] = useState(globalInkDebugSettings.connectorRejectLengthPx)
+  const [inkOffsetXPercent, setInkOffsetXPercent] = useState(globalInkDebugSettings.inkOffsetXPercent)
+  const [inkOffsetYPercent, setInkOffsetYPercent] = useState(globalInkDebugSettings.inkOffsetYPercent)
+  const [inkScaleXPercent, setInkScaleXPercent] = useState(globalInkDebugSettings.inkScaleXPercent)
+  const [inkScaleYPercent, setInkScaleYPercent] = useState(globalInkDebugSettings.inkScaleYPercent)
   const [showInkDebugPanel, setShowInkDebugPanel] = useState(false)
-  const [showSegmentOverlay, setShowSegmentOverlay] = useState(false)
-  const [enableInkSmoothing, setEnableInkSmoothing] = useState(true)
-  const [inkSmoothingPercent, setInkSmoothingPercent] = useState(50)
-  const [inkStrokeWidthPercent, setInkStrokeWidthPercent] = useState(100)
-  const [inkOpacityPercent, setInkOpacityPercent] = useState(100)
-  const [simplifyEpsilonPx, setSimplifyEpsilonPx] = useState(0)
-  const [chaikinIterations, setChaikinIterations] = useState(0)
-  const [useSpline, setUseSpline] = useState(true)
-  const [curveTensionPercent, setCurveTensionPercent] = useState(50)
-  const [enableOneEuroFilter, setEnableOneEuroFilter] = useState(false)
-  const [oneEuroMinCutoff, setOneEuroMinCutoff] = useState(1)
-  const [oneEuroBeta, setOneEuroBeta] = useState(0.4)
-  const [pressureGamma, setPressureGamma] = useState(1.6)
-  const [speedSensitivity, setSpeedSensitivity] = useState(20)
-  const [lockStrokeWidthOnZoom, setLockStrokeWidthOnZoom] = useState(true)
+  const [showSegmentOverlay, setShowSegmentOverlay] = useState(globalInkDebugSettings.showSegmentOverlay)
+  const [enableInkSmoothing, setEnableInkSmoothing] = useState(globalInkDebugSettings.enableInkSmoothing)
+  const [inkSmoothingPercent, setInkSmoothingPercent] = useState(globalInkDebugSettings.inkSmoothingPercent)
+  const [inkStrokeWidthPercent, setInkStrokeWidthPercent] = useState(globalInkDebugSettings.inkStrokeWidthPercent)
+  const [inkOpacityPercent, setInkOpacityPercent] = useState(globalInkDebugSettings.inkOpacityPercent)
+  const [simplifyEpsilonPx, setSimplifyEpsilonPx] = useState(globalInkDebugSettings.simplifyEpsilonPx)
+  const [chaikinIterations, setChaikinIterations] = useState(globalInkDebugSettings.chaikinIterations)
+  const [useSpline, setUseSpline] = useState(globalInkDebugSettings.useSpline)
+  const [curveTensionPercent, setCurveTensionPercent] = useState(globalInkDebugSettings.curveTensionPercent)
+  const [enableOneEuroFilter, setEnableOneEuroFilter] = useState(globalInkDebugSettings.enableOneEuroFilter)
+  const [oneEuroMinCutoff, setOneEuroMinCutoff] = useState(globalInkDebugSettings.oneEuroMinCutoff)
+  const [oneEuroBeta, setOneEuroBeta] = useState(globalInkDebugSettings.oneEuroBeta)
+  const [pressureGamma, setPressureGamma] = useState(globalInkDebugSettings.pressureGamma)
+  const [speedSensitivity, setSpeedSensitivity] = useState(globalInkDebugSettings.speedSensitivity)
+  const [lockStrokeWidthOnZoom, setLockStrokeWidthOnZoom] = useState(globalInkDebugSettings.lockStrokeWidthOnZoom)
+  const [inkDefaultsSavedAt, setInkDefaultsSavedAt] = useState<number | null>(null)
+
+  const saveCurrentDebugSettingsAsGlobalDefaults = useCallback(() => {
+    saveInkDebugGlobalSettings({
+      inkDecodeMode,
+      drawingsMode5DecodeMode,
+      drawingsFigure1DecodeMode,
+      flipInkY,
+      splitByPressure,
+      pressureLiftThresholdRaw,
+      connectorRejectLengthPx,
+      inkOffsetXPercent,
+      inkOffsetYPercent,
+      inkScaleXPercent,
+      inkScaleYPercent,
+      showSegmentOverlay,
+      enableInkSmoothing,
+      inkSmoothingPercent,
+      inkStrokeWidthPercent,
+      inkOpacityPercent,
+      simplifyEpsilonPx,
+      chaikinIterations,
+      useSpline,
+      curveTensionPercent,
+      enableOneEuroFilter,
+      oneEuroMinCutoff,
+      oneEuroBeta,
+      pressureGamma,
+      speedSensitivity,
+      lockStrokeWidthOnZoom,
+    })
+    setInkDefaultsSavedAt(Date.now())
+  }, [
+    chaikinIterations,
+    drawingsFigure1DecodeMode,
+    drawingsMode5DecodeMode,
+    connectorRejectLengthPx,
+    curveTensionPercent,
+    enableInkSmoothing,
+    enableOneEuroFilter,
+    flipInkY,
+    inkDecodeMode,
+    inkOffsetXPercent,
+    inkOffsetYPercent,
+    inkOpacityPercent,
+    inkScaleXPercent,
+    inkScaleYPercent,
+    inkSmoothingPercent,
+    inkStrokeWidthPercent,
+    lockStrokeWidthOnZoom,
+    oneEuroBeta,
+    oneEuroMinCutoff,
+    pressureGamma,
+    pressureLiftThresholdRaw,
+    showSegmentOverlay,
+    simplifyEpsilonPx,
+    speedSensitivity,
+    splitByPressure,
+    useSpline,
+  ])
 
   const searchQuery = externalSearchQuery ?? internalSearchQuery
   const selectedMatchIndex = externalSelectedMatchIndex ?? internalSelectedMatchIndex
@@ -539,6 +703,24 @@ export function PdfViewer({
 
   const getStrokePoints = useCallback(
     (stroke: FlexcilInkStroke) => {
+      const resolveByMode = (mode: DrawingDecodeMode) => {
+        if (mode === 'absolute') {
+          return stroke.pointsAbsolute ?? stroke.points
+        }
+        if (mode === 'cumulative') {
+          return stroke.pointsCumulative ?? stroke.points
+        }
+        return stroke.points
+      }
+
+      if (stroke.sourceMode === 5) {
+        return resolveByMode(drawingsMode5DecodeMode)
+      }
+
+      if (stroke.sourceFigure === 1) {
+        return resolveByMode(drawingsFigure1DecodeMode)
+      }
+
       if (inkDecodeMode === 'absolute') {
         return stroke.pointsAbsolute ?? stroke.points
       }
@@ -547,7 +729,7 @@ export function PdfViewer({
       }
       return stroke.points
     },
-    [inkDecodeMode],
+    [drawingsFigure1DecodeMode, drawingsMode5DecodeMode, inkDecodeMode],
   )
 
   const inspectorPageKey = useMemo(() => resolvePageKey(currentPage), [currentPage, resolvePageKey])
@@ -555,6 +737,16 @@ export function PdfViewer({
   const inspectorStrokes = useMemo(
     () => (inspectorPageKey ? document.inkDrawingsByPageKey?.[inspectorPageKey] ?? [] : []),
     [document.inkDrawingsByPageKey, inspectorPageKey],
+  )
+
+  const inspectorImageAnnotations = useMemo(
+    () => (inspectorPageKey ? document.imageAnnotationsByPageKey?.[inspectorPageKey] ?? [] : []),
+    [document.imageAnnotationsByPageKey, inspectorPageKey],
+  )
+
+  const inspectorShapes = useMemo(
+    () => (inspectorPageKey ? document.shapeAnnotationsByPageKey?.[inspectorPageKey] ?? [] : []),
+    [document.shapeAnnotationsByPageKey, inspectorPageKey],
   )
 
   const inspectorStats = useMemo<InkInspectorStats>(() => {
@@ -616,7 +808,13 @@ export function PdfViewer({
     }
   }, [getStrokePoints, inspectorStrokes])
 
-  const drawStrokesOnCanvas = useCallback((canvas: HTMLCanvasElement, strokes: FlexcilInkStroke[]) => {
+  const drawStrokesOnCanvas = useCallback(
+    (
+      canvas: HTMLCanvasElement,
+      strokes: FlexcilInkStroke[],
+      clear = true,
+      options?: { pixelScaleOverride?: number; zoomScaleOverride?: number },
+    ) => {
     const offsetXNorm = inkOffsetXPercent / 100
     const offsetYNorm = inkOffsetYPercent / 100
     const scaleX = inkScaleXPercent / 100
@@ -631,20 +829,28 @@ export function PdfViewer({
     }
     const canvasScaleX = canvas.clientWidth > 0 ? canvas.width / canvas.clientWidth : 1
     const canvasScaleY = canvas.clientHeight > 0 ? canvas.height / canvas.clientHeight : 1
-    const canvasPixelScale = (canvasScaleX + canvasScaleY) / 2
-    const zoomScale = Math.max(0.1, scalePercent / 100)
+    const canvasPixelScale =
+      typeof options?.pixelScaleOverride === 'number' && Number.isFinite(options.pixelScaleOverride)
+        ? Math.max(0.1, options.pixelScaleOverride)
+        : (canvasScaleX + canvasScaleY) / 2
+    const zoomScale =
+      typeof options?.zoomScaleOverride === 'number' && Number.isFinite(options.zoomScaleOverride)
+        ? Math.max(0.1, options.zoomScaleOverride)
+        : Math.max(0.1, scalePercent / 100)
 
     const context = canvas.getContext('2d')
     if (!context) {
       return
     }
 
-    context.clearRect(0, 0, canvas.width, canvas.height)
+    if (clear) {
+      context.clearRect(0, 0, canvas.width, canvas.height)
+    }
     context.lineCap = 'round'
     context.lineJoin = 'round'
     context.miterLimit = 2
 
-    const drawSegment = (segment: CanvasPoint[], baseStrokeWidth: number) => {
+    const drawSegment = (segment: CanvasPoint[], baseStrokeWidth: number, forceLinear = false) => {
       if (segment.length < 2) {
         return
       }
@@ -656,7 +862,9 @@ export function PdfViewer({
           points = applyOneEuroFilter(points, oneEuroMinCutoff, oneEuroBeta)
         }
 
-        points = applySpeedAdaptiveSmoothing(points, speedSensitivity)
+        if (enableInkSmoothing && splitByPressure) {
+          points = applySpeedAdaptiveSmoothing(points, speedSensitivity)
+        }
 
         if (simplifyEpsilonPx > 0) {
           points = simplifyRdp(points, simplifyEpsilonPx)
@@ -673,7 +881,7 @@ export function PdfViewer({
         return
       }
 
-      if (useSpline && prepared.length > 2) {
+      if (!forceLinear && useSpline && prepared.length > 2) {
         context.beginPath()
         context.moveTo(prepared[0].x, prepared[0].y)
         const tension = clamp(curveTensionPercent / 100, 0, 1)
@@ -711,7 +919,9 @@ export function PdfViewer({
         context.beginPath()
         context.moveTo(prev.x, prev.y)
         context.lineTo(curr.x, curr.y)
-        const widthCss = strokeWidthFromPressure(baseStrokeWidth, curr.pressure, pressureGamma)
+        const widthCss = forceLinear
+          ? baseStrokeWidth
+          : strokeWidthFromPressure(baseStrokeWidth, curr.pressure, pressureGamma)
         const widthDevicePx = widthCss * canvasPixelScale
         context.lineWidth = lockStrokeWidthOnZoom ? widthDevicePx * zoomScale : widthDevicePx
         context.stroke()
@@ -725,17 +935,32 @@ export function PdfViewer({
         continue
       }
 
+      const rawPressures = strokePoints
+        .map((point) => point.pressure)
+        .filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
+      const minPressure = rawPressures.length > 0 ? Math.min(...rawPressures) : 0
+      const maxPressure = rawPressures.length > 0 ? Math.max(...rawPressures) : 0
+      const pressureLooksLikeWidthMetadata =
+        rawPressures.length >= 2 && maxPressure <= 0.02 && maxPressure - minPressure <= 0.0035
+
       context.strokeStyle = stroke.strokeStyle
-      const baseStrokeWidth = (Number.isFinite(stroke.lineWidth) ? stroke.lineWidth : 2) * widthMultiplier
+      const baseStrokeWidthRaw = (Number.isFinite(stroke.lineWidth) ? stroke.lineWidth : 2) * widthMultiplier
+      const baseStrokeWidth = pressureLooksLikeWidthMetadata ? baseStrokeWidthRaw * 1.8 : baseStrokeWidthRaw
       context.globalAlpha = showSegmentOverlay ? 1 : opacity
+      const isGeneratedFigureStroke = stroke.sourceMode === 5 || stroke.sourceFigure === 1
 
       const canvasStrokePointsRaw = strokePoints.map((point) => ({
         x: toCanvasX(point.xNorm),
         y: toCanvasY(point.yNorm),
-        pressure: point.pressure,
+        pressure:
+          pressureLooksLikeWidthMetadata || isGeneratedFigureStroke
+            ? undefined
+            : point.pressure,
       }))
       const spikeThresholdPx = Math.max(18, canvas.width * 0.03)
-      const canvasStrokePoints = removeIsolatedSpikePoints(canvasStrokePointsRaw, spikeThresholdPx)
+      const canvasStrokePoints = splitByPressure
+        ? removeIsolatedSpikePoints(canvasStrokePointsRaw, spikeThresholdPx)
+        : canvasStrokePointsRaw
       if (canvasStrokePoints.length < 2) {
         continue
       }
@@ -745,16 +970,12 @@ export function PdfViewer({
       let previousY = first.y
       const jumpThresholdPx = Math.max(24, canvas.width * 0.04)
       const manualLiftThreshold = clamp(pressureLiftThresholdRaw, 0, 0.2)
-      const liftPressureThreshold = Math.max(manualLiftThreshold, splitByPressure ? 0.05 : 0)
+      const usePressureLiftSplit = splitByPressure && !pressureLooksLikeWidthMetadata && !isGeneratedFigureStroke
+      const liftPressureThreshold = Math.max(manualLiftThreshold, usePressureLiftSplit ? 0.05 : 0)
       const numericPressures = canvasStrokePoints
         .map((point) => point.pressure)
         .filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
-      const lowPressureCount = numericPressures.filter((value) => value <= liftPressureThreshold).length
-      const lowPressureRatio = numericPressures.length > 0 ? lowPressureCount / numericPressures.length : 0
       const hasPressureData = numericPressures.length >= Math.max(2, Math.floor(canvasStrokePoints.length * 0.1))
-      const hasReliablePressureSignal =
-        numericPressures.length >= Math.max(3, Math.floor(canvasStrokePoints.length * 0.2)) && lowPressureRatio < 0.9
-      const usePressureLiftSplit = splitByPressure || hasReliablePressureSignal || manualLiftThreshold > 0
       const geometricLiftSensitivity = 0.35 + (manualLiftThreshold / 0.2) * 0.45
       const firstIsLowPressure =
         usePressureLiftSplit && typeof first.pressure === 'number' && first.pressure <= liftPressureThreshold
@@ -763,13 +984,15 @@ export function PdfViewer({
         usePressureLiftSplit &&
         typeof secondPoint?.pressure === 'number' &&
         secondPoint.pressure <= liftPressureThreshold
-      const isFirstLiftPoint = splitByPressure && firstIsLowPressure && secondIsLowPressure
-      let segments: CanvasPoint[][] = isFirstLiftPoint
-        ? []
-        : [[{ x: previousX, y: previousY, pressure: first.pressure }]]
-      let previousWasLift = isFirstLiftPoint
+      const isFirstLiftPoint = usePressureLiftSplit && firstIsLowPressure && secondIsLowPressure
+      let segments: CanvasPoint[][] = isGeneratedFigureStroke
+        ? [canvasStrokePoints.map((point) => ({ x: point.x, y: point.y }))]
+        : isFirstLiftPoint
+          ? []
+          : [[{ x: previousX, y: previousY, pressure: first.pressure }]]
+      let previousWasLift = isGeneratedFigureStroke ? false : isFirstLiftPoint
 
-      for (let index = 1; index < canvasStrokePoints.length; index += 1) {
+      for (let index = 1; index < canvasStrokePoints.length && !isGeneratedFigureStroke; index += 1) {
         const point = canvasStrokePoints[index]
         const previousPoint = canvasStrokePoints[index - 1]
         const nextPoint = index + 1 < canvasStrokePoints.length ? canvasStrokePoints[index + 1] : undefined
@@ -794,8 +1017,8 @@ export function PdfViewer({
           (previousIsLowPressure || nextIsLowPressure) &&
           (jump > jumpThresholdPx * 0.45 || nextJump > jumpThresholdPx * 0.45)
 
-        const pressureLiftSignal = isLowPressurePoint && (splitByPressure || nonDebugLiftSignal)
-        const fallbackLiftSignal = (!hasPressureData || splitByPressure) && geometricLiftSignal
+        const pressureLiftSignal = isLowPressurePoint && nonDebugLiftSignal
+        const fallbackLiftSignal = usePressureLiftSplit && !hasPressureData && geometricLiftSignal
         const isCurrentLiftPoint = pressureLiftSignal || fallbackLiftSignal
 
         // Treat lift points as separators only; do not draw them as stroke geometry.
@@ -818,27 +1041,28 @@ export function PdfViewer({
         previousY = y
       }
 
-      const connectorRejectThresholdPx = clamp(connectorRejectLengthPx, 8, 120)
-      segments = segments.filter((segment) => {
-        if (segment.length < 2) {
-          return false
-        }
+      if (usePressureLiftSplit) {
+        const connectorRejectThresholdPx = clamp(connectorRejectLengthPx, 8, 120)
+        segments = segments.filter((segment) => {
+          if (segment.length < 2) {
+            return false
+          }
 
-        if (segment.length > 2) {
+          if (segment.length > 2) {
+            return true
+          }
+
+          const segmentLength = computeSegmentLength(segment)
+          // Ghost connectors are often represented as a long 2-point segment.
+          if (segmentLength > connectorRejectThresholdPx) {
+            return false
+          }
+
           return true
-        }
+        })
+      }
 
-        const segmentLength = computeSegmentLength(segment)
-        // Ghost connectors are often represented as a long 2-point segment.
-        // Reject these by geometry even when pressure metadata is missing/noisy.
-        if (segmentLength > connectorRejectThresholdPx) {
-          return false
-        }
-
-        return true
-      })
-
-      if (enableInkSmoothing && smoothingFactor > 0) {
+      if (!isGeneratedFigureStroke && enableInkSmoothing && smoothingFactor > 0) {
         for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex += 1) {
           segments[segmentIndex] = applyChaikin(segments[segmentIndex], Math.round(smoothingFactor * 2))
         }
@@ -853,7 +1077,7 @@ export function PdfViewer({
           context.strokeStyle = stroke.strokeStyle
         }
 
-        drawSegment(segment, baseStrokeWidth)
+        drawSegment(segment, baseStrokeWidth, isGeneratedFigureStroke)
 
         if (showSegmentOverlay && segment.length > 0) {
           const firstPoint = segment[0]
@@ -865,7 +1089,8 @@ export function PdfViewer({
       }
       context.globalAlpha = 1
     }
-  }, [
+    },
+    [
     chaikinIterations,
     curveTensionPercent,
     enableOneEuroFilter,
@@ -890,8 +1115,304 @@ export function PdfViewer({
     showSegmentOverlay,
     splitByPressure,
     useSpline,
-    lockStrokeWidthOnZoom,
-  ])
+      lockStrokeWidthOnZoom,
+    ],
+  )
+
+  const drawImageAnnotationsOnCanvas = useCallback(
+    async (canvas: HTMLCanvasElement, annotations: FlexcilImageAnnotation[]) => {
+      if (!annotations || annotations.length === 0) {
+        return
+      }
+
+      const context = canvas.getContext('2d')
+      if (!context) {
+        return
+      }
+
+      const offsetXNorm = inkOffsetXPercent / 100
+      const offsetYNorm = inkOffsetYPercent / 100
+      const scaleX = inkScaleXPercent / 100
+      const scaleY = inkScaleYPercent / 100
+      const opacity = Math.max(0, Math.min(1, inkOpacityPercent / 100))
+
+      const toCanvasX = (xNorm: number) => (xNorm * scaleX + offsetXNorm) * canvas.width
+      const toCanvasY = (yNorm: number) => {
+        const shifted = yNorm * scaleY + offsetYNorm
+        return (flipInkY ? 1 - shifted : shifted) * canvas.height
+      }
+
+      for (const annotation of annotations) {
+        try {
+          const bitmap = await createImageBitmap(annotation.imageBlob)
+
+          const widthPx = Math.max(1, annotation.widthNorm * scaleX * canvas.width)
+          const heightPx = Math.max(1, annotation.heightNorm * scaleY * canvas.height)
+          const xPx = toCanvasX(annotation.xNorm)
+          const yPx = toCanvasY(annotation.yNorm)
+
+          const crop = annotation.cropBox
+          const sourceX = crop ? Math.max(0, Math.min(1, crop.xNorm)) * bitmap.width : 0
+          const sourceY = crop ? Math.max(0, Math.min(1, crop.yNorm)) * bitmap.height : 0
+          const sourceW = crop ? Math.max(1, Math.min(1, crop.widthNorm) * bitmap.width) : bitmap.width
+          const sourceH = crop ? Math.max(1, Math.min(1, crop.heightNorm) * bitmap.height) : bitmap.height
+
+          context.save()
+          context.globalAlpha = opacity
+
+          if (typeof annotation.rotate === 'number' && Math.abs(annotation.rotate) > 0.0001) {
+            const centerX = xPx + widthPx / 2
+            const centerY = yPx + heightPx / 2
+            context.translate(centerX, centerY)
+            context.rotate(annotation.rotate)
+            context.drawImage(
+              bitmap,
+              sourceX,
+              sourceY,
+              sourceW,
+              sourceH,
+              -widthPx / 2,
+              -heightPx / 2,
+              widthPx,
+              heightPx,
+            )
+          } else {
+            context.drawImage(bitmap, sourceX, sourceY, sourceW, sourceH, xPx, yPx, widthPx, heightPx)
+          }
+
+          context.restore()
+          bitmap.close()
+        } catch {
+          continue
+        }
+      }
+
+      context.globalAlpha = 1
+    },
+    [flipInkY, inkOffsetXPercent, inkOffsetYPercent, inkOpacityPercent, inkScaleXPercent, inkScaleYPercent],
+  )
+
+  const drawShapeAnnotationsOnCanvas = useCallback(
+    (
+      canvas: HTMLCanvasElement,
+      shapes: FlexcilShapeAnnotation[],
+      options?: { pixelScaleOverride?: number },
+    ) => {
+      if (!shapes || shapes.length === 0) {
+        return
+      }
+
+      const context = canvas.getContext('2d')
+      if (!context) {
+        return
+      }
+
+      const offsetXNorm = inkOffsetXPercent / 100
+      const offsetYNorm = inkOffsetYPercent / 100
+      const scaleX = inkScaleXPercent / 100
+      const scaleY = inkScaleYPercent / 100
+      const opacity = Math.max(0, Math.min(1, inkOpacityPercent / 100))
+
+      const toCanvasX = (xNorm: number) => (xNorm * scaleX + offsetXNorm) * canvas.width
+      const toCanvasY = (yNorm: number) => {
+        const shifted = yNorm * scaleY + offsetYNorm
+        return (flipInkY ? 1 - shifted : shifted) * canvas.height
+      }
+
+      const canvasScaleX = canvas.clientWidth > 0 ? canvas.width / canvas.clientWidth : 1
+      const canvasScaleY = canvas.clientHeight > 0 ? canvas.height / canvas.clientHeight : 1
+      const canvasPixelScale =
+        typeof options?.pixelScaleOverride === 'number' && Number.isFinite(options.pixelScaleOverride)
+          ? Math.max(0.1, options.pixelScaleOverride)
+          : (canvasScaleX + canvasScaleY) / 2
+
+      const drawArrowHead = (
+        fromX: number,
+        fromY: number,
+        endX: number,
+        endY: number,
+        strokeWidth: number,
+        color: string,
+      ) => {
+        const dx = endX - fromX
+        const dy = endY - fromY
+        const length = Math.hypot(dx, dy)
+        if (!Number.isFinite(length) || length < 0.0001) {
+          return
+        }
+
+        const ux = dx / length
+        const uy = dy / length
+        const px = -uy
+        const py = ux
+        const headLength = Math.max(7, strokeWidth * 3.5)
+        const headWidth = Math.max(6, strokeWidth * 2.8)
+
+        context.beginPath()
+        context.moveTo(endX, endY)
+        context.lineTo(endX - ux * headLength + px * headWidth * 0.5, endY - uy * headLength + py * headWidth * 0.5)
+        context.lineTo(endX - ux * headLength - px * headWidth * 0.5, endY - uy * headLength - py * headWidth * 0.5)
+        context.closePath()
+        context.fillStyle = color
+        context.fill()
+      }
+
+      for (const shape of shapes) {
+        if (!shape.points || shape.points.length < 2) {
+          continue
+        }
+
+        context.save()
+        context.globalAlpha = opacity
+        context.strokeStyle = shape.strokeStyle
+        context.fillStyle = shape.fillStyle ?? 'transparent'
+        const widthFromPoints =
+          typeof shape.widthNorm === 'number' && Number.isFinite(shape.widthNorm) && shape.widthNorm > 0
+            ? shape.widthNorm * Math.min(canvas.width, canvas.height)
+            : 0
+        const strokeWidth = Math.max(1.2, shape.lineWidth * canvasPixelScale * 1.1, widthFromPoints * 1.6)
+        context.lineWidth = strokeWidth
+        context.lineCap = 'round'
+        context.lineJoin = 'round'
+        context.setLineDash(
+          shape.dashType === 1
+            ? [8 * canvasPixelScale, 6 * canvasPixelScale]
+            : shape.dashType === 2
+              ? [2 * canvasPixelScale, 5 * canvasPixelScale]
+              : [],
+        )
+
+        // Flexcil generated primitives: these types encode a bbox via two corner points.
+        if ((shape.shapeType === 1 || shape.shapeType === 3 || shape.shapeType === 4) && shape.points.length >= 2) {
+          const first = shape.points[0]
+          const last = shape.points[shape.points.length - 1]
+          const x1 = toCanvasX(first.xNorm)
+          const y1 = toCanvasY(first.yNorm)
+          const x2 = toCanvasX(last.xNorm)
+          const y2 = toCanvasY(last.yNorm)
+          const left = Math.min(x1, x2)
+          const right = Math.max(x1, x2)
+          const top = Math.min(y1, y2)
+          const bottom = Math.max(y1, y2)
+          const width = right - left
+          const height = bottom - top
+
+          // Tiny extents in legacy data should still behave like a line.
+          const treatAsPrimitive = Math.min(width, height) > Math.max(6, strokeWidth * 2)
+
+          if (treatAsPrimitive) {
+            context.beginPath()
+
+            if (shape.shapeType === 1) {
+              const cx = (left + right) / 2
+              const cy = (top + bottom) / 2
+              context.ellipse(cx, cy, width / 2, height / 2, 0, 0, Math.PI * 2)
+            } else if (shape.shapeType === 3) {
+              context.rect(left, top, width, height)
+            } else {
+              const cx = (left + right) / 2
+              const cy = (top + bottom) / 2
+              const rx = width / 2
+              const ry = height / 2
+              const angleOffset = -Math.PI / 2
+
+              for (let index = 0; index < 5; index += 1) {
+                const angle = angleOffset + (index / 5) * Math.PI * 2
+                const px = cx + Math.cos(angle) * rx
+                const py = cy + Math.sin(angle) * ry
+                if (index === 0) {
+                  context.moveTo(px, py)
+                } else {
+                  context.lineTo(px, py)
+                }
+              }
+              context.closePath()
+            }
+
+            context.stroke()
+            context.restore()
+            continue
+          }
+        }
+
+        const shapePoints = shape.points
+        const first = shapePoints[0]
+        const lastOriginal = shapePoints[shapePoints.length - 1]
+
+        let effectivePoints = shapePoints
+        if (shape.shapeType === 7 && shapePoints.length >= 2) {
+          const prev = shapePoints[shapePoints.length - 2]
+          const dx = lastOriginal.xNorm - prev.xNorm
+          const dy = lastOriginal.yNorm - prev.yNorm
+          const lenNorm = Math.hypot(dx, dy)
+          if (lenNorm > 0.000001) {
+            const minDimPx = Math.min(canvas.width, canvas.height)
+            const headLengthPx = Math.max(7, strokeWidth * 3.5)
+            const headLengthNorm = headLengthPx / Math.max(1, minDimPx)
+            const trimNorm = Math.min(lenNorm * 0.55, headLengthNorm * 0.75)
+            const ux = dx / lenNorm
+            const uy = dy / lenNorm
+            const shortenedLast = {
+              xNorm: lastOriginal.xNorm - ux * trimNorm,
+              yNorm: lastOriginal.yNorm - uy * trimNorm,
+            }
+            effectivePoints = [...shapePoints.slice(0, -1), shortenedLast]
+          }
+        }
+
+        context.beginPath()
+        context.moveTo(toCanvasX(first.xNorm), toCanvasY(first.yNorm))
+
+        if (shape.shapeType === 6 && shape.controlPoints && shape.controlPoints.length > 0 && effectivePoints.length >= 2) {
+          const control = shape.controlPoints[0]
+          const last = effectivePoints[effectivePoints.length - 1]
+          context.quadraticCurveTo(
+            toCanvasX(control.xNorm),
+            toCanvasY(control.yNorm),
+            toCanvasX(last.xNorm),
+            toCanvasY(last.yNorm),
+          )
+        } else {
+          for (let index = 1; index < effectivePoints.length; index += 1) {
+            const point = effectivePoints[index]
+            context.lineTo(toCanvasX(point.xNorm), toCanvasY(point.yNorm))
+          }
+        }
+
+        if (shape.shapeType === 9 || shape.isClosed) {
+          context.closePath()
+        }
+
+        const shouldFill = shape.shapeType === 9
+        if (shouldFill) {
+          if (!shape.fillStyle && shape.shapeType === 9) {
+            context.fillStyle = shape.strokeStyle
+          }
+          context.fill()
+        }
+        context.stroke()
+
+        if (shape.shapeType === 7 && shapePoints.length >= 2) {
+          const startPoint = shapePoints[0]
+          const endPoint = lastOriginal
+          drawArrowHead(
+            toCanvasX(startPoint.xNorm),
+            toCanvasY(startPoint.yNorm),
+            toCanvasX(endPoint.xNorm),
+            toCanvasY(endPoint.yNorm),
+            strokeWidth,
+            shape.strokeStyle,
+          )
+        }
+
+        context.restore()
+      }
+
+      context.setLineDash([])
+      context.globalAlpha = 1
+    },
+    [flipInkY, inkOffsetXPercent, inkOffsetYPercent, inkOpacityPercent, inkScaleXPercent, inkScaleYPercent],
+  )
 
   const renderInkOverlays = useCallback(() => {
     const viewerElement = viewerRef.current
@@ -923,7 +1444,12 @@ export function PdfViewer({
       }
 
       const strokes = document.inkDrawingsByPageKey?.[pageKey]
-      if (!strokes || strokes.length === 0) {
+      const imageAnnotations = document.imageAnnotationsByPageKey?.[pageKey]
+      const shapes = document.shapeAnnotationsByPageKey?.[pageKey]
+      const hasStrokes = Boolean(strokes && strokes.length > 0)
+      const hasImages = Boolean(imageAnnotations && imageAnnotations.length > 0)
+      const hasShapes = Boolean(shapes && shapes.length > 0)
+      if (!hasStrokes && !hasImages && !hasShapes) {
         continue
       }
 
@@ -952,10 +1478,27 @@ export function PdfViewer({
       overlay.style.height = '100%'
       overlay.style.pointerEvents = 'none'
 
-      drawStrokesOnCanvas(overlay, strokes)
+      const pageStrokes = strokes ?? []
+      const pageImages = imageAnnotations ?? []
+      const pageShapes = shapes ?? []
+      void (async () => {
+        drawStrokesOnCanvas(overlay, pageStrokes, true)
+        await drawImageAnnotationsOnCanvas(overlay, pageImages)
+        drawStrokesOnCanvas(overlay, pageStrokes, false)
+        drawShapeAnnotationsOnCanvas(overlay, pageShapes)
+      })()
       canvasHost.appendChild(overlay)
     }
-  }, [document.inkDrawingsByPageKey, drawStrokesOnCanvas, resolvePageKey, showAnnotations])
+  }, [
+    document.imageAnnotationsByPageKey,
+    document.inkDrawingsByPageKey,
+    document.shapeAnnotationsByPageKey,
+    drawImageAnnotationsOnCanvas,
+    drawShapeAnnotationsOnCanvas,
+    drawStrokesOnCanvas,
+    resolvePageKey,
+    showAnnotations,
+  ])
 
   useEffect(() => {
     const eventBus = eventBusRef.current
@@ -1195,13 +1738,106 @@ export function PdfViewer({
     }
   }
 
-  const download = async () => {
+  const downloadOriginalPdf = useCallback(() => {
     const url = URL.createObjectURL(document.pdfBlob)
     const anchor = window.document.createElement('a')
     anchor.href = url
     anchor.download = fileName
     anchor.click()
     URL.revokeObjectURL(url)
+  }, [document.pdfBlob, fileName])
+
+  const download = async () => {
+    if (isDownloadingAnnotatedPdf) {
+      return
+    }
+
+    const sourcePdf = pdfDocumentRef.current
+    const hasInkOverlays = Boolean(document.inkDrawingsByPageKey && Object.keys(document.inkDrawingsByPageKey).length > 0)
+    const hasImageOverlays = Boolean(
+      document.imageAnnotationsByPageKey && Object.keys(document.imageAnnotationsByPageKey).length > 0,
+    )
+    const hasShapeOverlays = Boolean(
+      document.shapeAnnotationsByPageKey && Object.keys(document.shapeAnnotationsByPageKey).length > 0,
+    )
+
+    if (!sourcePdf || (!hasInkOverlays && !hasImageOverlays && !hasShapeOverlays)) {
+      downloadOriginalPdf()
+      return
+    }
+
+    setIsDownloadingAnnotatedPdf(true)
+    try {
+      const outputPdf = await PDFDocument.create()
+      const renderScale = 2
+
+      for (let pageNumber = 1; pageNumber <= sourcePdf.numPages; pageNumber += 1) {
+        const pdfPage = await sourcePdf.getPage(pageNumber)
+        const baseViewport = pdfPage.getViewport({ scale: 1 })
+        const renderViewport = pdfPage.getViewport({ scale: renderScale })
+
+        const canvas = window.document.createElement('canvas')
+        canvas.width = Math.max(1, Math.ceil(renderViewport.width))
+        canvas.height = Math.max(1, Math.ceil(renderViewport.height))
+
+        const context = canvas.getContext('2d', { alpha: false })
+        if (!context) {
+          continue
+        }
+
+        await pdfPage.render({ canvas: canvas, canvasContext: context, viewport: renderViewport }).promise
+
+        const pageKey = resolvePageKey(pageNumber)
+        const pageImages = pageKey ? document.imageAnnotationsByPageKey?.[pageKey] ?? [] : []
+        const pageStrokes = pageKey ? document.inkDrawingsByPageKey?.[pageKey] ?? [] : []
+        const pageShapes = pageKey ? document.shapeAnnotationsByPageKey?.[pageKey] ?? [] : []
+
+        if (pageImages.length > 0) {
+          await drawImageAnnotationsOnCanvas(canvas, pageImages)
+        }
+        if (pageStrokes.length > 0) {
+          drawStrokesOnCanvas(canvas, pageStrokes, false, { pixelScaleOverride: renderScale })
+        }
+        if (pageShapes.length > 0) {
+          drawShapeAnnotationsOnCanvas(canvas, pageShapes, { pixelScaleOverride: renderScale })
+        }
+
+        const flattenedBlob = await new Promise<Blob | null>((resolveBlob) => {
+          canvas.toBlob(resolveBlob, 'image/jpeg', 0.92)
+        })
+        if (!flattenedBlob) {
+          continue
+        }
+
+        const flattenedBytes = new Uint8Array(await flattenedBlob.arrayBuffer())
+        const embedded = await outputPdf.embedJpg(flattenedBytes)
+        const outPage = outputPdf.addPage([baseViewport.width, baseViewport.height])
+        outPage.drawImage(embedded, {
+          x: 0,
+          y: 0,
+          width: baseViewport.width,
+          height: baseViewport.height,
+        })
+
+        pdfPage.cleanup()
+      }
+
+      const outputBytes = await outputPdf.save()
+      const normalizedOutputBytes = new Uint8Array(outputBytes.byteLength)
+      normalizedOutputBytes.set(outputBytes)
+      const outputBlob = new Blob([normalizedOutputBytes], { type: 'application/pdf' })
+      const outputUrl = URL.createObjectURL(outputBlob)
+      const anchor = window.document.createElement('a')
+      const baseName = fileName.replace(/\.pdf$/i, '')
+      anchor.href = outputUrl
+      anchor.download = `${baseName}-annotated.pdf`
+      anchor.click()
+      URL.revokeObjectURL(outputUrl)
+    } catch {
+      downloadOriginalPdf()
+    } finally {
+      setIsDownloadingAnnotatedPdf(false)
+    }
   }
 
   const rootHeightClass = viewportMode === 'fill' ? 'h-full' : 'h-screen'
@@ -1318,10 +1954,11 @@ export function PdfViewer({
         <button
           type="button"
           onClick={download}
+          disabled={isDownloadingAnnotatedPdf}
           className="ml-auto inline-flex h-9 items-center gap-2 rounded-lg border border-border px-3 text-sm hover:bg-muted"
         >
           <Download className="size-4" />
-          Download
+          {isDownloadingAnnotatedPdf ? 'Preparing…' : 'Download'}
         </button>
 
         <label className="ml-2 inline-flex h-9 items-center gap-2 rounded-lg border border-border px-3 text-sm hover:bg-muted">
@@ -1386,6 +2023,32 @@ export function PdfViewer({
                   <select
                     value={inkDecodeMode}
                     onChange={(event) => setInkDecodeMode(event.target.value as InkDecodeMode)}
+                    className="h-7 rounded-md border border-border bg-background px-2 text-xs"
+                  >
+                    <option value="auto">Auto</option>
+                    <option value="absolute">Absolute</option>
+                    <option value="cumulative">Cumulative</option>
+                  </select>
+                </label>
+
+                <label className="col-span-2 flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground">Drawings mode=5 decode</span>
+                  <select
+                    value={drawingsMode5DecodeMode}
+                    onChange={(event) => setDrawingsMode5DecodeMode(event.target.value as DrawingDecodeMode)}
+                    className="h-7 rounded-md border border-border bg-background px-2 text-xs"
+                  >
+                    <option value="auto">Auto</option>
+                    <option value="absolute">Absolute</option>
+                    <option value="cumulative">Cumulative</option>
+                  </select>
+                </label>
+
+                <label className="col-span-2 flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground">Drawings figure=1 decode</span>
+                  <select
+                    value={drawingsFigure1DecodeMode}
+                    onChange={(event) => setDrawingsFigure1DecodeMode(event.target.value as DrawingDecodeMode)}
                     className="h-7 rounded-md border border-border bg-background px-2 text-xs"
                   >
                     <option value="auto">Auto</option>
@@ -1486,6 +2149,18 @@ export function PdfViewer({
               </div>
 
               <div className="mb-3 space-y-2">
+                <button
+                  type="button"
+                  onClick={saveCurrentDebugSettingsAsGlobalDefaults}
+                  className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
+                >
+                  Save current debug settings as global defaults
+                </button>
+
+                {inkDefaultsSavedAt && (
+                  <p className="text-[11px] text-emerald-500">Global debug defaults saved.</p>
+                )}
+
                 <label className="flex items-center justify-between gap-2">
                   <span className="text-muted-foreground">Offset X</span>
                   <input
@@ -1733,6 +2408,8 @@ export function PdfViewer({
                 <p>Page: {currentPage}</p>
                 <p>PageKey: {inspectorPageKey ?? 'none'}</p>
                 <p>Strokes: {inspectorStats.strokeCount}</p>
+                <p>Images on page: {inspectorImageAnnotations.length}</p>
+                <p>Shapes on page: {inspectorShapes.length}</p>
                 <p>Points: {inspectorStats.pointCount}</p>
                 <p>Avg step: {inspectorStats.avgStepNorm.toFixed(5)}</p>
                 <p>Max jump: {inspectorStats.maxJumpNorm.toFixed(5)}</p>

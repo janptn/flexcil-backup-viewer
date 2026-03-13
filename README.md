@@ -81,6 +81,26 @@ Instant search across all indexed documents with live updates.
 
 ---
 
+### Splitscreen
+<p align="center">
+  <img src="./assets/Splitscreen.png" width="90%" />
+</p>
+
+Splitscreenview and TopBar with more than one document.
+
+---
+
+### 📚 Shape recognition (Beta)
+<p align="center">
+  <img src="./assets/shape.png" width="90%" />
+</p>
+
+Can inprint the shape from Flexcil, but still in beta.
+
+
+
+
+
 ## ⬇️ Download (Windows .exe)
 
 If you don’t want to run the development version, you can download the standalone Windows executable from the **Releases** section.

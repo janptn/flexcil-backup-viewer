@@ -37,6 +37,55 @@ jobs:
       - name: Package macOS app
         run: npm run dist:mac
 
+      - name: Smoke test DMG install and app launch
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          DMG_PATH=$(ls -t release/electron/*.dmg | head -n 1)
+          if [ -z "${DMG_PATH:-}" ]; then
+            echo "No DMG artifact found in release/electron"
+            exit 1
+          fi
+
+          echo "Using DMG: $DMG_PATH"
+          hdiutil attach "$DMG_PATH" -nobrowse -quiet
+
+          VOLUME_PATH=$(ls -d /Volumes/Flexcil\ Local\ Viewer* | head -n 1)
+          if [ -z "${VOLUME_PATH:-}" ]; then
+            echo "Failed to detect mounted DMG volume"
+            hdiutil detach /Volumes/Flexcil\ Local\ Viewer* -quiet || true
+            exit 1
+          fi
+
+          APP_PATH=$(find "$VOLUME_PATH" -maxdepth 1 -name "*.app" -print | head -n 1)
+          if [ -z "${APP_PATH:-}" ]; then
+            echo "No .app bundle found on mounted DMG"
+            hdiutil detach "$VOLUME_PATH" -quiet || true
+            exit 1
+          fi
+
+          APP_NAME=$(basename "$APP_PATH")
+          TARGET_APP="/Applications/$APP_NAME"
+
+          rm -rf "$TARGET_APP"
+          cp -R "$APP_PATH" /Applications/
+
+          xattr -dr com.apple.quarantine "$TARGET_APP" || true
+
+          open -a "$TARGET_APP"
+          sleep 8
+
+          if ! pgrep -f "$APP_NAME" >/dev/null 2>&1; then
+            echo "App did not start successfully"
+            hdiutil detach "$VOLUME_PATH" -quiet || true
+            exit 1
+          fi
+
+          pkill -f "$APP_NAME" || true
+          hdiutil detach "$VOLUME_PATH" -quiet || true
+          rm -rf "$TARGET_APP"
+
       - name: Upload macOS build artifacts (workflow)
         uses: actions/upload-artifact@v4
         with:

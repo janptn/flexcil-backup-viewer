@@ -1,9 +1,10 @@
 {
   "title": "What's new",
-  "version": "1.2.7",
+  "version": "1.2.8",
   "items": [
-    "Fixed workspace search result navigation that could jump back to an older page after selecting a new result.",
-    "Search sidebar behavior in workspace mode is now synchronized with open/close state and clears correctly on close.",
-    "Improved search indexing responsiveness so scrolling stays usable while document hits are being collected."
+    "Added one-click 'Download all as ZIP' from the library home screen.",
+    "ZIP export now preserves library folder structure and exports each document as PDF.",
+    "Document overlays (ink, images, and shapes) are included in ZIP exports.",
+    "Improved Download-all rendering parity to better match single-document export output for stroke thickness and shape primitives."
   ]
 }

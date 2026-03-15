@@ -5,6 +5,7 @@ import { LibraryGrid } from '../components/LibraryGrid'
 import { Sidebar } from '../components/Sidebar'
 import { Topbar } from '../components/Topbar'
 import { useLibraryContext } from '../context/LibraryContext'
+import { exportAllDocumentsAsZip, type ExportProgress } from '../lib/exportAllDocumentsZip'
 import type { BackupImportKind, CollectionFilter, DocumentRecord } from '../types'
 
 const LIBRARY_COLLECTION_KEY = 'flexcil-library-selected-collection-v1'
@@ -180,6 +181,8 @@ export function LibraryPage() {
   const [pendingImportFiles, setPendingImportFiles] = useState<File[] | null>(null)
   const [previewMode, setPreviewMode] = useState<LibraryPreviewMode>(() => loadStoredPreviewMode())
   const [gridSize, setGridSize] = useState<LibraryGridSize>(() => loadStoredGridSize())
+  const [isExportingZip, setIsExportingZip] = useState(false)
+  const [exportProgress, setExportProgress] = useState<ExportProgress | null>(null)
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const saved = localStorage.getItem('theme')
     return saved ? saved === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches
@@ -339,6 +342,29 @@ export function LibraryPage() {
     void handleImportFiles(files, backupKind)
   }
 
+  const handleExportAllAsZip = async () => {
+    if (isExportingZip || documents.length === 0) {
+      return
+    }
+
+    setIsExportingZip(true)
+    setExportProgress({ stage: 'Preparing export...', percent: 0 })
+
+    try {
+      const fileName = await exportAllDocumentsAsZip(documents, (progress) => {
+        setExportProgress(progress)
+      })
+      setToast(`Export ready: ${fileName}`)
+      window.setTimeout(() => setToast(null), 4000)
+    } catch {
+      setToast('Export failed. Please try again.')
+      window.setTimeout(() => setToast(null), 4000)
+    } finally {
+      setIsExportingZip(false)
+      setExportProgress(null)
+    }
+  }
+
   return (
     <div
       className="relative flex h-screen flex-col"
@@ -404,6 +430,18 @@ export function LibraryPage() {
               )}
             </div>
             <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  void handleExportAllAsZip()
+                }}
+                disabled={isExportingZip || loading || documents.length === 0}
+                className="rounded-md border border-border bg-background px-2 py-1 text-xs font-medium text-foreground transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isExportingZip
+                  ? `Exporting... ${Math.round(exportProgress?.percent ?? 0)}%`
+                  : 'Download all as ZIP'}
+              </button>
               <label htmlFor="library-view-mode" className="text-xs text-muted-foreground">
                 View
               </label>
@@ -510,6 +548,25 @@ export function LibraryPage() {
         stage={importProgress.stage}
         percent={importProgress.percent}
       />
+
+      {isExportingZip && exportProgress && (
+        <div className="fixed bottom-6 left-1/2 z-50 w-[min(92vw,420px)] -translate-x-1/2 rounded-2xl border border-border bg-card p-4 shadow-xl">
+          <div className="mb-2 flex items-center gap-2 text-sm font-medium">
+            <span>Export in progress...</span>
+          </div>
+
+          <p className="mb-3 text-sm text-muted-foreground">{exportProgress.stage}</p>
+
+          <div className="h-2 overflow-hidden rounded-full bg-muted">
+            <div
+              className="h-full rounded-full bg-accent transition-all duration-300"
+              style={{ width: `${Math.max(0, Math.min(100, exportProgress.percent))}%` }}
+            />
+          </div>
+
+          <p className="mt-2 text-right text-xs text-muted-foreground">{Math.round(exportProgress.percent)}%</p>
+        </div>
+      )}
 
       {toast && (
         <div className="pointer-events-none fixed bottom-6 right-6 rounded-xl border border-border bg-card px-4 py-3 text-sm shadow-lg">

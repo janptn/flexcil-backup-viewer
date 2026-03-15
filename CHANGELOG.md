@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.2.8 - 2026-03-15
+
+### Added
+- Added a new home-screen action to download all library documents as a single ZIP archive.
+- ZIP export now keeps the document folder structure from the library.
+- ZIP export includes annotations in output PDFs (ink, images, and shapes).
+
+### Fixed
+- Improved Download-all PDF rendering to better match single-document export results.
+- Fixed mismatches in stroke thickness and box/shape primitive drawing during bulk export.
+
 ## 1.2.7 - 2026-03-15
 
 ### Fixed

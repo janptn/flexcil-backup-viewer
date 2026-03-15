@@ -150,7 +150,7 @@ Open the shown local URL in your browser.
 
 ### Importing Documents
 
-1. Download your Flexcil backup ZIP from Google Drive (Manuel Backups doesnt work, these have an other structure and are not implementet yet.).
+1. Download your Flexcil backup ZIP from Google Drive or a manual backup (Both are working since the new Update).
 2. Drag & drop the ZIP file into the app.
 3. The app automatically:
    - Extracts PDFs
@@ -164,7 +164,7 @@ Open the shown local URL in your browser.
 
 Whenever you create new documents on your tablet:
 
-1. Download the latest Flexcil backup ZIP from Google Drive.
+1. Download the latest Flexcil backup ZIP from Google Drive or a manual backup from the App.
 2. Drag & drop it into the app again.
 3. The viewer automatically:
    - Detects new documents

@@ -560,12 +560,16 @@ export function PdfViewer({
   const viewerInstanceRef = useRef<PdfJsViewer | null>(null)
   const eventBusRef = useRef<EventBus | null>(null)
   const pdfDocumentRef = useRef<Awaited<ReturnType<typeof getDocument>>['promise'] extends Promise<infer T> ? T : never | null>(null)
+  const lastNavigatedSearchStateRef = useRef<{ query: string; index: number } | null>(null)
+  const pendingSearchClickRef = useRef<{ query: string; index: number } | null>(null)
+  const navigationRequestIdRef = useRef(0)
 
   const [pagesCount, setPagesCount] = useState(0)
   const [currentPage, setCurrentPage] = useState(1)
   const [scalePercent, setScalePercent] = useState(100)
   const [pageInput, setPageInput] = useState('1')
   const [internalSearchQuery, setInternalSearchQuery] = useState('')
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('')
   const [searchHits, setSearchHits] = useState<SearchHit[]>([])
   const [internalSelectedMatchIndex, setInternalSelectedMatchIndex] = useState(0)
   const [isSearching, setIsSearching] = useState(false)
@@ -841,10 +845,10 @@ export function PdfViewer({
       return
     }
 
-    const query = searchQuery.trim()
+    const query = debouncedSearchQuery.trim()
     eventBus.dispatch('find', {
       source: 'viewer-search',
-      type: '',
+      type: 'highlightallchange',
       query,
       caseSensitive: false,
       entireWord: false,
@@ -853,7 +857,7 @@ export function PdfViewer({
       findPrevious: false,
       matchDiacritics: false,
     })
-  }, [loading, pagesCount, searchQuery])
+  }, [debouncedSearchQuery, loading, pagesCount])
 
   const resolvePageKey = useCallback(
     (pageNumber: number): string | undefined => {
@@ -1781,10 +1785,20 @@ export function PdfViewer({
   }, [renderInkOverlays])
 
   useEffect(() => {
-    const query = searchQuery.trim().toLowerCase()
+    const timer = window.setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery)
+    }, 220)
+
+    return () => {
+      window.clearTimeout(timer)
+    }
+  }, [searchQuery])
+
+  useEffect(() => {
+    const query = debouncedSearchQuery.trim().toLowerCase()
     const pdfDocument = pdfDocumentRef.current
 
-    if (!query || !pdfDocument) {
+    if (!showSearchSidebar || !query || !pdfDocument) {
       setSearchHits([])
       setIsSearching(false)
       return
@@ -1839,6 +1853,12 @@ export function PdfViewer({
         }
 
         page.cleanup()
+
+        // Yield every page so wheel/scroll interactions stay responsive during indexing.
+        await new Promise<void>((resolve) => {
+          window.setTimeout(() => resolve(), 0)
+        })
+
         if (hits.length >= maxHits) {
           break
         }
@@ -1860,15 +1880,74 @@ export function PdfViewer({
     return () => {
       cancelled = true
     }
-  }, [searchQuery])
+  }, [debouncedSearchQuery, pagesCount, showSearchSidebar])
 
   useEffect(() => {
     onSearchHitsChange?.(searchHits)
   }, [onSearchHitsChange, searchHits])
 
+  const navigateToPage = useCallback((nextPage: number) => {
+    const viewer = viewerInstanceRef.current
+    if (!viewer || pagesCount === 0) {
+      return
+    }
+
+    const navigationRequestId = navigationRequestIdRef.current + 1
+    navigationRequestIdRef.current = navigationRequestId
+
+    const safePage = Math.max(1, Math.min(nextPage, pagesCount))
+    viewer.currentPageNumber = safePage
+
+    try {
+      const jump = viewer as unknown as {
+        scrollPageIntoView?: (params: { pageNumber: number }) => void
+      }
+      jump.scrollPageIntoView?.({ pageNumber: safePage })
+    } catch {
+    }
+
+    const ensureDomScroll = (attempt = 0) => {
+      if (navigationRequestIdRef.current !== navigationRequestId) {
+        return
+      }
+
+      const host = viewerRef.current
+      if (!host) {
+        return
+      }
+
+      const pageElement = host.querySelector<HTMLElement>(`.page[data-page-number=\"${safePage}\"]`)
+      if (pageElement) {
+        pageElement.scrollIntoView({ block: 'start', behavior: 'auto' })
+        return
+      }
+
+      if (attempt < 10) {
+        window.setTimeout(() => ensureDomScroll(attempt + 1), 45)
+      }
+    }
+
+    window.requestAnimationFrame(() => {
+      if (navigationRequestIdRef.current !== navigationRequestId) {
+        return
+      }
+      ensureDomScroll()
+    })
+    setCurrentPage(safePage)
+    setPageInput(String(safePage))
+  }, [pagesCount])
+
+  useEffect(() => {
+    return () => {
+      navigationRequestIdRef.current += 1
+    }
+  }, [])
+
   useEffect(() => {
     const query = searchQuery.trim()
     if (!query || searchHits.length === 0) {
+      lastNavigatedSearchStateRef.current = null
+      pendingSearchClickRef.current = null
       return
     }
 
@@ -1878,28 +1957,40 @@ export function PdfViewer({
       return
     }
 
+    const pendingClick = pendingSearchClickRef.current
+    if (pendingClick && pendingClick.query === query) {
+      if (pendingClick.index !== safeIndex) {
+        // Ignore stale controlled-index updates until it catches up with the most recent click.
+        return
+      }
+
+      pendingSearchClickRef.current = null
+    }
+
+    const lastState = lastNavigatedSearchStateRef.current
+    // Do not auto-jump while typing/changing query; only jump on explicit match index changes.
+    if (!lastState || lastState.query !== query) {
+      lastNavigatedSearchStateRef.current = { query, index: safeIndex }
+      return
+    }
+
+    if (lastState.index === safeIndex) {
+      return
+    }
+
     const hit = searchHits[safeIndex]
     if (!hit) {
       return
     }
 
-    const viewer = viewerInstanceRef.current
-    if (viewer) {
-      viewer.currentPageNumber = hit.pageNumber
-    }
-  }, [searchHits, searchQuery, selectedMatchIndex, setSelectedMatchIndex])
+    navigateToPage(hit.pageNumber)
+
+    lastNavigatedSearchStateRef.current = { query, index: safeIndex }
+  }, [navigateToPage, searchHits, searchQuery, selectedMatchIndex, setSelectedMatchIndex])
 
   const goToPage = useCallback((nextPage: number) => {
-    const viewer = viewerInstanceRef.current
-    if (!viewer || pagesCount === 0) {
-      return
-    }
-
-    const safePage = Math.max(1, Math.min(nextPage, pagesCount))
-    viewer.currentPageNumber = safePage
-    setCurrentPage(safePage)
-    setPageInput(String(safePage))
-  }, [pagesCount])
+    navigateToPage(nextPage)
+  }, [navigateToPage])
 
   const emitViewState = useCallback(() => {
     if (!onViewStateChange) {
@@ -2255,8 +2346,17 @@ export function PdfViewer({
                   key={hit.id}
                   type="button"
                   onClick={() => {
+                    const query = searchQuery.trim()
+                    pendingSearchClickRef.current = {
+                      query,
+                      index,
+                    }
                     setSelectedMatchIndex(index)
                     goToPage(hit.pageNumber)
+                    lastNavigatedSearchStateRef.current = {
+                      query,
+                      index,
+                    }
                   }}
                   className="w-full rounded-lg border border-border px-2 py-2 text-left hover:bg-muted"
                 >

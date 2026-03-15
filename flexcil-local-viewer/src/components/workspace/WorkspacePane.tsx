@@ -57,6 +57,13 @@ export function WorkspacePane({
 
   const canNavigateResults = searchResultCount > 0
 
+  const closeSearch = () => {
+    onSearchQueryChange('')
+    onSearchResultsChange([])
+    onSearchIndexChange(0)
+    onToggleSearch()
+  }
+
   const onNextMatch = () => {
     if (!activeTab || !canNavigateResults) {
       return
@@ -107,7 +114,7 @@ export function WorkspacePane({
         showToolbar={true}
         showBackButton={false}
         showSearchInput={false}
-        showSearchSidebar={false}
+        showSearchSidebar={pane.isSearchOpen}
         viewportMode="fill"
         externalSearchQuery={activeTab.search.searchQuery}
         onExternalSearchQueryChange={onSearchQueryChange}
@@ -157,7 +164,7 @@ export function WorkspacePane({
           onQueryChange={onSearchQueryChange}
           onPrev={onPrevMatch}
           onNext={onNextMatch}
-          onClose={onToggleSearch}
+          onClose={closeSearch}
         />
       )}
 

@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.2.7 - 2026-03-15
+
+### Fixed
+- Fixed workspace search result clicks that could jump back to a previously selected page instead of staying on the latest selected result.
+- Fixed inconsistent behavior where search navigation appeared more stable only while browser DevTools were open.
+
+### Changed
+- Search sidebar open/close behavior in workspace view is now fully synchronized and clears query/result state on close.
+- Improved search hit indexing flow to reduce UI blocking while collecting document matches.
+
 ## 1.2.6 - 2026-03-15
 
 ### Added

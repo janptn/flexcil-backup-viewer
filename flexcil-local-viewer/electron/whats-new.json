@@ -1,12 +1,9 @@
 {
   "title": "What's new",
-  "version": "1.2.6",
+  "version": "1.2.7",
   "items": [
-    "Added explicit backup type selection during import (Google Drive Backup vs Manual Backup).",
-    "Manual .flex backup imports now read real folder paths from Documents/... and preserve document names correctly.",
-    "Improved handwriting cleanup to reduce hover/start trails and ghost connector strokes in problematic drawings.",
-    "Improved annotation thickness handling by deriving per-stroke width from Flexcil drawing metadata.",
-    "Refined predefined shape rendering with better arrow geometry and corrected fill behavior for box-like symbols.",
-    "Library view options now include Default, A4 Preview, and Original thumbnail mode, plus adjustable grid size."
+    "Fixed workspace search result navigation that could jump back to an older page after selecting a new result.",
+    "Search sidebar behavior in workspace mode is now synchronized with open/close state and clears correctly on close.",
+    "Improved search indexing responsiveness so scrolling stays usable while document hits are being collected."
   ]
 }

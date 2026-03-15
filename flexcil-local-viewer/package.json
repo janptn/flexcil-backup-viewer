@@ -17,6 +17,7 @@
     "build:server": "node -e \"require('fs').accessSync('launcher/server.cjs'); console.log('server launcher ready')\"",
     "build:electron": "npm run build:web && npm run build:server",
     "electron:dev": "npm run build:electron && electron .",
+    "dist:mac": "npm run build:electron && electron-builder --mac dmg zip --publish never",
     "dist:win": "npm run build:electron && electron-builder --win nsis --publish never",
     "prepare:icons": "node scripts/prepare-icons.cjs",
     "set:exe:icon": "node scripts/set-exe-icon.cjs",

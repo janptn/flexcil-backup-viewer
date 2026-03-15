@@ -1,4 +1,5 @@
 import { inflate, inflateRaw } from 'pako'
+import type { ImportInputFile } from '../types'
 
 export interface DocumentsListMapping {
   documentId: string
@@ -80,13 +81,17 @@ function walkNodes(
   }
 }
 
-export async function parseDocumentsListMappings(files: File[]): Promise<Map<string, DocumentsListMapping>> {
-  const listFiles = files.filter((file) => file.name.toLowerCase().endsWith('documents.list'))
+export async function parseDocumentsListMappings(files: ImportInputFile[]): Promise<Map<string, DocumentsListMapping>> {
+  const listFiles = files.filter((entry) => {
+    const fileName = entry.file.name.toLowerCase()
+    const archivePath = (entry.archivePath ?? '').toLowerCase()
+    return fileName.endsWith('documents.list') || archivePath.endsWith('documents.list')
+  })
   const mappings = new Map<string, DocumentsListMapping>()
 
   for (const listFile of listFiles) {
     try {
-      const decoded = await decodeCompressedList(listFile)
+      const decoded = await decodeCompressedList(listFile.file)
       walkNodes(decoded, [], mappings)
     } catch {
       continue

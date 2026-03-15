@@ -3,9 +3,11 @@ import type { DocumentRecord } from '../types'
 
 interface LibraryGridProps {
   documents: DocumentRecord[]
+  previewMode: 'default' | 'a4' | 'original'
+  gridSize: 'compact' | 'comfortable' | 'large'
 }
 
-export function LibraryGrid({ documents }: LibraryGridProps) {
+export function LibraryGrid({ documents, previewMode, gridSize }: LibraryGridProps) {
   if (documents.length === 0) {
     return (
       <div className="rounded-2xl border border-dashed border-border bg-card p-10 text-center text-sm text-muted-foreground">
@@ -14,10 +16,17 @@ export function LibraryGrid({ documents }: LibraryGridProps) {
     )
   }
 
+  const gridClassName =
+    gridSize === 'compact'
+      ? 'grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5'
+      : gridSize === 'large'
+        ? 'grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3'
+        : 'grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
+
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+    <div className={gridClassName}>
       {documents.map((document) => (
-        <DocumentCard key={document.id} document={document} />
+        <DocumentCard key={document.id} document={document} previewMode={previewMode} />
       ))}
     </div>
   )

@@ -3,8 +3,10 @@ import { sha256 } from './hash'
 import { argbToRgbaCss, parseFlexcilDrawings } from './flexcilInk'
 import { normalizeDocumentId } from './documentsList'
 import type {
+  BackupImportKind,
   DocumentRecord,
   FlexcilImageAnnotation,
+  ImportInputFile,
   FlexcilShapeAnnotation,
   FlexcilShapePoint,
   UnknownMeta,
@@ -26,7 +28,7 @@ const FOLDER_KEYS = new Set([
 ])
 const TITLE_KEYS = ['title', 'name', 'documentTitle']
 const DATE_KEYS = ['createdAt', 'updatedAt', 'date', 'modifiedAt', 'created', 'timestamp']
-const PARSER_VERSION = '2026-03-13-forms-render-v1'
+const PARSER_VERSION = '2026-03-15-hover-filter-v2'
 
 interface PageIndexEntry {
   attachmentPage?: {
@@ -166,6 +168,30 @@ function inferFolderPath(obj: unknown): string[] | undefined {
   }
 
   return undefined
+}
+
+function inferManualFolderPathFromArchivePath(archivePath?: string): string[] | undefined {
+  if (!archivePath || archivePath.trim().length === 0) {
+    return undefined
+  }
+
+  const segments = archivePath
+    .split(/[\\/]+/g)
+    .map((segment) => segment.trim())
+    .filter(Boolean)
+
+  if (segments.length <= 1) {
+    return undefined
+  }
+
+  const fileNameIndex = segments.length - 1
+  const documentsIndex = segments.findIndex((segment) => segment.toLowerCase() === 'documents')
+  const folderSegments =
+    documentsIndex >= 0
+      ? segments.slice(documentsIndex + 1, fileNameIndex)
+      : segments.slice(0, fileNameIndex)
+
+  return folderSegments.length > 0 ? folderSegments : undefined
 }
 
 function createMetaObject(metaItems: Array<[string, unknown]>): UnknownMeta | undefined {
@@ -529,12 +555,14 @@ async function extractShapeAnnotationsByPageKey(
 }
 
 export async function parseFlexelFiles(
-  files: File[],
+  files: ImportInputFile[],
+  backupKind: BackupImportKind,
   documentsListMappings?: Map<string, DocumentsListMapping>,
 ): Promise<DocumentRecord[]> {
   const parsedRecords: DocumentRecord[] = []
 
-  for (const file of files) {
+  for (const entry of files) {
+    const file = entry.file
     if (!file.name.toLowerCase().endsWith('.flx')) {
       continue
     }
@@ -574,6 +602,9 @@ export async function parseFlexelFiles(
     const titleFromMeta = searchFirstString(meta, TITLE_KEYS)
     const createdAt = searchFirstDate(meta)
     const folderPath = inferFolderPath(meta)
+    const folderPathFromArchive =
+      backupKind === 'manual' ? inferManualFolderPathFromArchivePath(entry.archivePath) : undefined
+    const manualTitle = file.name.replace(/\.flx$/i, '').trim()
 
     for (const pdfEntry of pdfEntries) {
       const pdfBytes = await pdfEntry.async('uint8array')
@@ -586,7 +617,12 @@ export async function parseFlexelFiles(
       const pdfHash = await sha256(pdfBytes)
       const id = sourceId.trim().length > 0 ? sourceId : pdfHash
       const title =
-        mapping?.title ?? (titleFromMeta && pdfEntries.length === 1 ? titleFromMeta : id)
+        mapping?.title ??
+        (backupKind === 'manual' && manualTitle.length > 0
+          ? manualTitle
+          : titleFromMeta && pdfEntries.length === 1
+            ? titleFromMeta
+            : id)
 
       const normalizedThumbnailBytes = thumbnailBytes
         ? (() => {
@@ -609,7 +645,11 @@ export async function parseFlexelFiles(
           ? new Blob([normalizedThumbnailBytes], { type: 'image/jpeg' })
           : undefined,
         meta,
-        folderPath: mapping?.folderPath?.length ? mapping.folderPath : folderPath,
+        folderPath: mapping?.folderPath?.length
+          ? mapping.folderPath
+          : folderPathFromArchive?.length
+            ? folderPathFromArchive
+            : folderPath,
         inkPageKeys: Object.keys(inkPageKeys).length > 0 ? inkPageKeys : undefined,
         inkDrawingsByPageKey:
           Object.keys(inkDrawingsByPageKey).length > 0 ? inkDrawingsByPageKey : undefined,

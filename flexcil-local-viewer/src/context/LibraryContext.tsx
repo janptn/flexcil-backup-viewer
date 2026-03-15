@@ -1,14 +1,14 @@
 import { createContext, useContext, useMemo } from 'react'
 import { useFlexelImport } from '../hooks/useFlexelImport'
 import { useLibraryStore } from '../hooks/useLibraryStore'
-import type { DocumentRecord, ImportProgress, ImportSummary } from '../types'
+import type { BackupImportKind, DocumentRecord, ImportProgress, ImportSummary } from '../types'
 
 interface LibraryContextValue {
   documents: DocumentRecord[]
   loading: boolean
   reload: () => Promise<void>
   findById: (id: string) => Promise<DocumentRecord | undefined>
-  importFlxFiles: (files: FileList | File[]) => Promise<ImportSummary>
+  importFlxFiles: (files: FileList | File[], backupKind: BackupImportKind) => Promise<ImportSummary>
   isImporting: boolean
   importProgress: ImportProgress
   lastSummary: ImportSummary | null

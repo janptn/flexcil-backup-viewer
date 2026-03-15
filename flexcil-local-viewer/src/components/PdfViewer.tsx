@@ -50,7 +50,7 @@ interface PdfViewerProps {
 const MIN_SCALE = 0.5
 const MAX_SCALE = 4
 const ZOOM_STEP = 0.2
-const INK_DEBUG_GLOBAL_SETTINGS_KEY = 'flexcil-ink-debug-global-settings-v5'
+const INK_DEBUG_GLOBAL_SETTINGS_KEY = 'flexcil-ink-debug-global-settings-v6'
 
 type SearchHit = PdfSearchHit
 
@@ -105,7 +105,7 @@ const DEFAULT_INK_DEBUG_SETTINGS: InkDebugGlobalSettings = {
   showSegmentOverlay: false,
   enableInkSmoothing: true,
   inkSmoothingPercent: 50,
-  inkStrokeWidthPercent: 65,
+  inkStrokeWidthPercent: 100,
   inkOpacityPercent: 100,
   simplifyEpsilonPx: 0,
   chaikinIterations: 0,
@@ -371,6 +371,172 @@ function strokeWidthFromPressure(
   const minW = baseWidth * 0.55
   const maxW = baseWidth * 1.35
   return minW + curved * (maxW - minW)
+}
+
+function computeInkPathStats(points: FlexcilInkStroke['points'] | undefined): {
+  count: number
+  lengthNorm: number
+  spanNorm: number
+  outOfBoundsRatio: number
+} {
+  if (!points || points.length === 0) {
+    return { count: 0, lengthNorm: 0, spanNorm: 0, outOfBoundsRatio: 0 }
+  }
+
+  let lengthNorm = 0
+  let outOfBounds = 0
+  let minX = Number.POSITIVE_INFINITY
+  let maxX = Number.NEGATIVE_INFINITY
+  let minY = Number.POSITIVE_INFINITY
+  let maxY = Number.NEGATIVE_INFINITY
+
+  for (let index = 0; index < points.length; index += 1) {
+    const point = points[index]
+    minX = Math.min(minX, point.xNorm)
+    maxX = Math.max(maxX, point.xNorm)
+    minY = Math.min(minY, point.yNorm)
+    maxY = Math.max(maxY, point.yNorm)
+
+    if (point.xNorm < 0 || point.xNorm > 1 || point.yNorm < 0 || point.yNorm > 1) {
+      outOfBounds += 1
+    }
+
+    if (index > 0) {
+      const previous = points[index - 1]
+      lengthNorm += Math.hypot(point.xNorm - previous.xNorm, point.yNorm - previous.yNorm)
+    }
+  }
+
+  return {
+    count: points.length,
+    lengthNorm,
+    spanNorm: Math.hypot(maxX - minX, maxY - minY),
+    outOfBoundsRatio: outOfBounds / points.length,
+  }
+}
+
+function medianNumber(values: number[]): number {
+  if (values.length === 0) {
+    return 0
+  }
+
+  const sorted = [...values].sort((left, right) => left - right)
+  const middle = Math.floor(sorted.length / 2)
+  if (sorted.length % 2 === 0) {
+    return (sorted[middle - 1] + sorted[middle]) / 2
+  }
+
+  return sorted[middle]
+}
+
+function trimLeadingInkTrailPoints(points: FlexcilInkStroke['points']): FlexcilInkStroke['points'] {
+  if (!points || points.length < 3) {
+    return points
+  }
+
+  let cleaned = points
+
+  // Drop duplicated starting coordinates that frequently appear after pen-lift metadata points.
+  while (cleaned.length > 2) {
+    const first = cleaned[0]
+    const second = cleaned[1]
+    const firstStep = Math.hypot(second.xNorm - first.xNorm, second.yNorm - first.yNorm)
+    if (firstStep > 0.0000001) {
+      break
+    }
+    cleaned = cleaned.slice(1)
+  }
+
+  for (let iteration = 0; iteration < 4 && cleaned.length >= 8; iteration += 1) {
+    const segmentLengths: number[] = []
+    for (let index = 1; index < cleaned.length; index += 1) {
+      const previous = cleaned[index - 1]
+      const current = cleaned[index]
+      segmentLengths.push(Math.hypot(current.xNorm - previous.xNorm, current.yNorm - previous.yNorm))
+    }
+
+    if (segmentLengths.length < 4) {
+      break
+    }
+
+    const firstLength = segmentLengths[0]
+    const remainder = segmentLengths.slice(1)
+    const nonZeroRemainder = remainder.filter((length) => length > 0.0000001)
+    const baseline = medianNumber(nonZeroRemainder)
+    const maxRemainder = nonZeroRemainder.length > 0 ? Math.max(...nonZeroRemainder) : 0
+    const ratioToMedian = baseline > 0 ? firstLength / baseline : Infinity
+    const ratioToMax = maxRemainder > 0 ? firstLength / maxRemainder : Infinity
+
+    const looksLikeLeadingTrail =
+      firstLength > 0.0022 &&
+      ratioToMedian >= 4.5 &&
+      ratioToMax >= 1.35
+
+    if (!looksLikeLeadingTrail) {
+      break
+    }
+
+    cleaned = cleaned.slice(1)
+  }
+
+  return cleaned
+}
+
+function deriveWidthMultiplierFromMetadataPressure(pressures: number[]): number {
+  if (pressures.length === 0) {
+    return 1
+  }
+
+  const sorted = [...pressures].sort((left, right) => left - right)
+  const representative = percentileFromSorted(sorted, 0.7)
+
+  // Empirical reference from Flexcil archives where scale stays at 1.
+  const reference = 0.0028
+  const normalized = representative / reference
+  const curved = normalized ** 0.92
+  return clamp(curved, 0.78, 2.9)
+}
+
+function percentileFromSorted(sorted: number[], percentile: number): number {
+  if (sorted.length === 0) {
+    return 0
+  }
+
+  const ratio = clamp(percentile, 0, 1)
+  const index = Math.floor((sorted.length - 1) * ratio)
+  return sorted[index]
+}
+
+function deriveRelativeMetadataWidthMultiplier(
+  pressureMedian: number,
+  distribution: { p25: number; p50: number; p75: number },
+): number {
+  const iqr = Math.max(distribution.p75 - distribution.p25, 0.0000001)
+  const normalized = (pressureMedian - distribution.p50) / iqr
+  const curved = Math.sign(normalized) * Math.abs(normalized) ** 0.85
+  return clamp(1 + curved * 0.6, 0.7, 2.5)
+}
+
+function shouldFallbackToAbsoluteVariant(stroke: FlexcilInkStroke, candidate: FlexcilInkStroke['points']): boolean {
+  const absolute = stroke.pointsAbsolute
+  if (!absolute || absolute.length < 2 || !candidate || candidate.length < 2 || candidate === absolute) {
+    return false
+  }
+
+  const candidateStats = computeInkPathStats(candidate)
+  const absoluteStats = computeInkPathStats(absolute)
+  if (candidateStats.count < 2 || absoluteStats.count < 2) {
+    return false
+  }
+
+  const lengthRatio = candidateStats.lengthNorm / Math.max(absoluteStats.lengthNorm, 0.0001)
+  const spanRatio = candidateStats.spanNorm / Math.max(absoluteStats.spanNorm, 0.0001)
+  const candidateLooksSuspicious =
+    candidateStats.outOfBoundsRatio > 0.1 ||
+    (lengthRatio > 3.5 && spanRatio > 2.2) ||
+    candidateStats.spanNorm > 1.25
+
+  return candidateLooksSuspicious
 }
 
 export function PdfViewer({
@@ -725,9 +891,14 @@ export function PdfViewer({
         return stroke.pointsAbsolute ?? stroke.points
       }
       if (inkDecodeMode === 'cumulative') {
-        return stroke.pointsCumulative ?? stroke.points
+        const candidate = stroke.pointsCumulative ?? stroke.points
+        return shouldFallbackToAbsoluteVariant(stroke, candidate)
+          ? stroke.pointsAbsolute ?? stroke.points
+          : candidate
       }
-      return stroke.points
+      return shouldFallbackToAbsoluteVariant(stroke, stroke.points)
+        ? stroke.pointsAbsolute ?? stroke.points
+        : stroke.points
     },
     [drawingsFigure1DecodeMode, drawingsMode5DecodeMode, inkDecodeMode],
   )
@@ -928,8 +1099,50 @@ export function PdfViewer({
       }
     }
 
-    for (const stroke of strokes) {
-      const strokePoints = getStrokePoints(stroke)
+    const preparedStrokes = strokes
+      .map((stroke) => ({
+        stroke,
+        points: trimLeadingInkTrailPoints(getStrokePoints(stroke)),
+      }))
+      .filter((item) => item.points && item.points.length >= 2)
+
+    const metadataPressureMedians: number[] = []
+    const metadataMedianByIndex = new Map<number, number>()
+
+    for (let strokeIndex = 0; strokeIndex < preparedStrokes.length; strokeIndex += 1) {
+      const item = preparedStrokes[strokeIndex]
+      const pressures = item.points
+        .map((point) => point.pressure)
+        .filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
+
+      if (pressures.length < 2) {
+        continue
+      }
+
+      const maxPressure = Math.max(...pressures)
+      // In Flexcil archives, metadata-width channels are tiny values near zero.
+      if (maxPressure > 0.02) {
+        continue
+      }
+
+      const sorted = [...pressures].sort((left, right) => left - right)
+      const median = sorted[Math.floor(sorted.length / 2)]
+      metadataMedianByIndex.set(strokeIndex, median)
+      metadataPressureMedians.push(median)
+    }
+
+    const sortedMetadataMedians = [...metadataPressureMedians].sort((left, right) => left - right)
+    const metadataDistribution =
+      sortedMetadataMedians.length >= 4
+        ? {
+            p25: percentileFromSorted(sortedMetadataMedians, 0.25),
+            p50: percentileFromSorted(sortedMetadataMedians, 0.5),
+            p75: percentileFromSorted(sortedMetadataMedians, 0.75),
+          }
+        : undefined
+
+    for (let strokeIndex = 0; strokeIndex < preparedStrokes.length; strokeIndex += 1) {
+      const { stroke, points: strokePoints } = preparedStrokes[strokeIndex]
 
       if (!strokePoints || strokePoints.length < 2) {
         continue
@@ -938,14 +1151,31 @@ export function PdfViewer({
       const rawPressures = strokePoints
         .map((point) => point.pressure)
         .filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
-      const minPressure = rawPressures.length > 0 ? Math.min(...rawPressures) : 0
       const maxPressure = rawPressures.length > 0 ? Math.max(...rawPressures) : 0
-      const pressureLooksLikeWidthMetadata =
-        rawPressures.length >= 2 && maxPressure <= 0.02 && maxPressure - minPressure <= 0.0035
+      const pressureLooksLikeWidthMetadata = rawPressures.length >= 2 && maxPressure <= 0.02
+      const metadataMedian = metadataMedianByIndex.get(strokeIndex)
+      const metadataWidthMultiplier =
+        pressureLooksLikeWidthMetadata && typeof metadataMedian === 'number'
+          ? (() => {
+              const absoluteMultiplier = deriveWidthMultiplierFromMetadataPressure(rawPressures)
+              const relativeMultiplier = metadataDistribution
+                ? deriveRelativeMetadataWidthMultiplier(metadataMedian, metadataDistribution)
+                : absoluteMultiplier
+
+              // Keep strong absolute size differences while still using relative local contrast.
+              const blended = absoluteMultiplier * 0.85 + relativeMultiplier * 0.15
+
+              // Prevent very short symbol strokes from becoming unnaturally thin, without flattening all widths.
+              const minForShortStroke = strokePoints.length <= 6 ? 0.95 : 0.85
+              return clamp(blended, minForShortStroke, 2.7)
+            })()
+          : 1
 
       context.strokeStyle = stroke.strokeStyle
       const baseStrokeWidthRaw = (Number.isFinite(stroke.lineWidth) ? stroke.lineWidth : 2) * widthMultiplier
-      const baseStrokeWidth = pressureLooksLikeWidthMetadata ? baseStrokeWidthRaw * 1.8 : baseStrokeWidthRaw
+      const baseStrokeWidth = pressureLooksLikeWidthMetadata
+        ? baseStrokeWidthRaw * metadataWidthMultiplier
+        : baseStrokeWidthRaw
       context.globalAlpha = showSegmentOverlay ? 1 : opacity
       const isGeneratedFigureStroke = stroke.sourceMode === 5 || stroke.sourceFigure === 1
 
@@ -1245,16 +1475,21 @@ export function PdfViewer({
         const uy = dy / length
         const px = -uy
         const py = ux
-        const headLength = Math.max(7, strokeWidth * 3.5)
-        const headWidth = Math.max(6, strokeWidth * 2.8)
+        const headLength = Math.max(8, strokeWidth * 2.95)
+        const headWidth = Math.max(8.2, strokeWidth * 5.05)
+        const connectorLength = headLength * 0.5
 
         context.beginPath()
+        context.moveTo(endX - ux * connectorLength, endY - uy * connectorLength)
+        context.lineTo(endX, endY)
         context.moveTo(endX, endY)
         context.lineTo(endX - ux * headLength + px * headWidth * 0.5, endY - uy * headLength + py * headWidth * 0.5)
+        context.moveTo(endX, endY)
         context.lineTo(endX - ux * headLength - px * headWidth * 0.5, endY - uy * headLength - py * headWidth * 0.5)
-        context.closePath()
-        context.fillStyle = color
-        context.fill()
+        context.strokeStyle = color
+        context.lineCap = 'round'
+        context.lineJoin = 'round'
+        context.stroke()
       }
 
       for (const shape of shapes) {
@@ -1270,7 +1505,15 @@ export function PdfViewer({
           typeof shape.widthNorm === 'number' && Number.isFinite(shape.widthNorm) && shape.widthNorm > 0
             ? shape.widthNorm * Math.min(canvas.width, canvas.height)
             : 0
-        const strokeWidth = Math.max(1.2, shape.lineWidth * canvasPixelScale * 1.1, widthFromPoints * 1.6)
+        const isSymbolShape = shape.shapeType === 7 || shape.shapeType === 9 || shape.shapeType === 4
+        const scaleFromLineWidth = isSymbolShape ? 0.82 : 0.92
+        const scaleFromWidthNorm = isSymbolShape ? 0.95 : 1.2
+        const minStrokeWidth = isSymbolShape ? 0.9 : 1.05
+        const strokeWidth = Math.max(
+          minStrokeWidth,
+          shape.lineWidth * canvasPixelScale * scaleFromLineWidth,
+          widthFromPoints * scaleFromWidthNorm,
+        )
         context.lineWidth = strokeWidth
         context.lineCap = 'round'
         context.lineJoin = 'round'
@@ -1349,7 +1592,7 @@ export function PdfViewer({
             const minDimPx = Math.min(canvas.width, canvas.height)
             const headLengthPx = Math.max(7, strokeWidth * 3.5)
             const headLengthNorm = headLengthPx / Math.max(1, minDimPx)
-            const trimNorm = Math.min(lenNorm * 0.55, headLengthNorm * 0.75)
+            const trimNorm = Math.min(lenNorm * 0.6, headLengthNorm * 0.6)
             const ux = dx / lenNorm
             const uy = dy / lenNorm
             const shortenedLast = {
@@ -1383,21 +1626,34 @@ export function PdfViewer({
           context.closePath()
         }
 
-        const shouldFill = shape.shapeType === 9
-        if (shouldFill) {
-          if (!shape.fillStyle && shape.shapeType === 9) {
-            context.fillStyle = shape.strokeStyle
+        const fillAlpha = (() => {
+          if (!shape.fillStyle) {
+            return 0
           }
+          const match = shape.fillStyle.match(/rgba\([^)]*,\s*([0-9.]+)\s*\)$/i)
+          if (!match) {
+            return 0
+          }
+          const parsed = Number(match[1])
+          return Number.isFinite(parsed) ? parsed : 0
+        })()
+        const hasVisibleFill = fillAlpha > 0.03
+        const isFilledTriangleShape = shape.shapeType === 9 && effectivePoints.length <= 3
+        const shouldFill = isFilledTriangleShape && hasVisibleFill
+        if (shouldFill) {
           context.fill()
         }
         context.stroke()
 
         if (shape.shapeType === 7 && shapePoints.length >= 2) {
-          const startPoint = shapePoints[0]
+          const directionPoint =
+            effectivePoints.length >= 2
+              ? effectivePoints[effectivePoints.length - 2]
+              : shapePoints[0]
           const endPoint = lastOriginal
           drawArrowHead(
-            toCanvasX(startPoint.xNorm),
-            toCanvasY(startPoint.yNorm),
+            toCanvasX(directionPoint.xNorm),
+            toCanvasY(directionPoint.yNorm),
             toCanvasX(endPoint.xNorm),
             toCanvasY(endPoint.yNorm),
             strokeWidth,

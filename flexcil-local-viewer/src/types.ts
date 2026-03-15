@@ -89,6 +89,13 @@ export interface ImportSummary {
   failed: number
 }
 
+export type BackupImportKind = 'drive' | 'manual'
+
+export interface ImportInputFile {
+  file: File
+  archivePath?: string
+}
+
 export interface ImportProgress {
   active: boolean
   stage: string

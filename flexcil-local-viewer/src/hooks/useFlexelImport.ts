@@ -4,7 +4,7 @@ import { applyDocumentsListMappings, saveDocumentRecords } from '../lib/db'
 import { parseDocumentsListMappings } from '../lib/documentsList'
 import { parseFlexelFiles } from '../lib/flexelImport'
 import { extractPdfTextInfo } from '../lib/pdfText'
-import type { ImportProgress, ImportSummary } from '../types'
+import type { BackupImportKind, ImportInputFile, ImportProgress, ImportSummary } from '../types'
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -34,8 +34,8 @@ function isSupportedArchiveName(name: string): boolean {
   return lower.endsWith('.zip') || lower.endsWith('.flex')
 }
 
-async function expandImportFiles(files: File[]): Promise<File[]> {
-  const expanded: File[] = []
+async function expandImportFiles(files: File[]): Promise<ImportInputFile[]> {
+  const expanded: ImportInputFile[] = []
 
   for (const file of files) {
     if (isSupportedArchiveName(file.name)) {
@@ -47,7 +47,10 @@ async function expandImportFiles(files: File[]): Promise<File[]> {
           const blob = await entry.async('blob')
           const fallbackName = entry.name.split('/').pop() ?? entry.name
           const fileName = fallbackName.length > 0 ? fallbackName : entry.name
-          expanded.push(new File([blob], fileName, { type: 'application/octet-stream' }))
+          expanded.push({
+            file: new File([blob], fileName, { type: 'application/octet-stream' }),
+            archivePath: entry.name,
+          })
         }
       } catch {
         // Ignore invalid archive files and continue importing remaining inputs.
@@ -56,7 +59,10 @@ async function expandImportFiles(files: File[]): Promise<File[]> {
     }
 
     if (isSupportedImportName(file.name)) {
-      expanded.push(file)
+      expanded.push({
+        file,
+        archivePath: file.webkitRelativePath?.trim() || file.name,
+      })
     }
   }
 
@@ -73,7 +79,7 @@ export function useFlexelImport(onImported: () => Promise<void>) {
   })
 
   const importFiles = useCallback(
-    async (files: FileList | File[]) => {
+    async (files: FileList | File[], backupKind: BackupImportKind = 'drive') => {
       const incoming = Array.from(files)
       if (incoming.length === 0) {
         const emptySummary = { added: 0, updated: 0, skipped: 0, failed: 0 }
@@ -106,7 +112,7 @@ export function useFlexelImport(onImported: () => Promise<void>) {
         )
 
         setProgress({ active: true, stage: 'Extracting FLX documents…', percent: 45 })
-        const records = await parseFlexelFiles(list, mappings)
+        const records = await parseFlexelFiles(list, backupKind, mappings)
 
         let indexedRecords = records
         if (records.length > 0) {

@@ -1,12 +1,12 @@
 {
   "title": "What's new",
-  "version": "1.2.5",
+  "version": "1.2.6",
   "items": [
-    "Extended import compatibility for backup containers and improved document/folder mapping updates across repeated imports.",
-    "Improved overlay rendering pipeline for handwriting, image annotations, and shape annotations.",
-    "Added annotated PDF export improvements so overlays are preserved in downloads.",
-    "Added advanced ink/shape debug controls with persistent defaults for decode mode, stroke width, and rendering diagnostics.",
-    "Added parser-version based update detection so re-importing updates existing documents after parser/rendering changes.",
-    "Form rendering improvements are currently beta: line, arrow, rectangle, pentagon, circle, and spline handling has been significantly improved but is still being fine-tuned."
+    "Added explicit backup type selection during import (Google Drive Backup vs Manual Backup).",
+    "Manual .flex backup imports now read real folder paths from Documents/... and preserve document names correctly.",
+    "Improved handwriting cleanup to reduce hover/start trails and ghost connector strokes in problematic drawings.",
+    "Improved annotation thickness handling by deriving per-stroke width from Flexcil drawing metadata.",
+    "Refined predefined shape rendering with better arrow geometry and corrected fill behavior for box-like symbols.",
+    "Library view options now include Default, A4 Preview, and Original thumbnail mode, plus adjustable grid size."
   ]
 }

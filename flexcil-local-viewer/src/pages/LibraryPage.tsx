@@ -5,11 +5,16 @@ import { LibraryGrid } from '../components/LibraryGrid'
 import { Sidebar } from '../components/Sidebar'
 import { Topbar } from '../components/Topbar'
 import { useLibraryContext } from '../context/LibraryContext'
-import type { CollectionFilter, DocumentRecord } from '../types'
+import type { BackupImportKind, CollectionFilter, DocumentRecord } from '../types'
 
 const LIBRARY_COLLECTION_KEY = 'flexcil-library-selected-collection-v1'
 const LIBRARY_QUERY_KEY = 'flexcil-library-query-v1'
 const LIBRARY_SCROLL_TOP_KEY = 'flexcil-library-scroll-top-v1'
+const LIBRARY_PREVIEW_MODE_KEY = 'flexcil-library-preview-mode-v1'
+const LIBRARY_GRID_SIZE_KEY = 'flexcil-library-grid-size-v1'
+
+type LibraryPreviewMode = 'default' | 'a4' | 'original'
+type LibraryGridSize = 'compact' | 'comfortable' | 'large'
 
 function isCollectionFilter(value: unknown): value is CollectionFilter {
   if (typeof value !== 'object' || value === null || !('type' in value)) {
@@ -59,6 +64,30 @@ function loadStoredScrollTop(): number {
     return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0
   } catch {
     return 0
+  }
+}
+
+function loadStoredPreviewMode(): LibraryPreviewMode {
+  try {
+    const value = localStorage.getItem(LIBRARY_PREVIEW_MODE_KEY)
+    if (value === 'a4' || value === 'original') {
+      return value
+    }
+    return 'default'
+  } catch {
+    return 'default'
+  }
+}
+
+function loadStoredGridSize(): LibraryGridSize {
+  try {
+    const value = localStorage.getItem(LIBRARY_GRID_SIZE_KEY)
+    if (value === 'compact' || value === 'large') {
+      return value
+    }
+    return 'comfortable'
+  } catch {
+    return 'comfortable'
   }
 }
 
@@ -148,6 +177,9 @@ export function LibraryPage() {
   const hasRestoredScrollRef = useRef(false)
   const [dragging, setDragging] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
+  const [pendingImportFiles, setPendingImportFiles] = useState<File[] | null>(null)
+  const [previewMode, setPreviewMode] = useState<LibraryPreviewMode>(() => loadStoredPreviewMode())
+  const [gridSize, setGridSize] = useState<LibraryGridSize>(() => loadStoredGridSize())
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const saved = localStorage.getItem('theme')
     return saved ? saved === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches
@@ -214,6 +246,20 @@ export function LibraryPage() {
   }, [query])
 
   useEffect(() => {
+    try {
+      localStorage.setItem(LIBRARY_PREVIEW_MODE_KEY, previewMode)
+    } catch {
+    }
+  }, [previewMode])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(LIBRARY_GRID_SIZE_KEY, gridSize)
+    } catch {
+    }
+  }, [gridSize])
+
+  useEffect(() => {
     if (loading || hasRestoredScrollRef.current) {
       return
     }
@@ -256,14 +302,41 @@ export function LibraryPage() {
     window.setTimeout(() => setToast(null), 3000)
   }
 
-  const handleImportFiles = async (files: FileList | File[]) => {
+  const handleImportFiles = async (files: FileList | File[], backupKind: BackupImportKind) => {
     try {
-      const result = await importFlxFiles(files)
+      const result = await importFlxFiles(files, backupKind)
       showSummaryToast(result.added, result.updated, result.skipped)
     } catch {
       setToast('Import failed. Please select files again.')
       window.setTimeout(() => setToast(null), 3500)
     }
+  }
+
+  const requestBackupTypeSelection = (files: FileList | File[]) => {
+    if (isImporting) {
+      return
+    }
+
+    const list = Array.from(files)
+    if (list.length === 0) {
+      return
+    }
+
+    setPendingImportFiles(list)
+  }
+
+  const closeBackupTypeSelection = () => {
+    setPendingImportFiles(null)
+  }
+
+  const confirmBackupTypeSelection = (backupKind: BackupImportKind) => {
+    if (!pendingImportFiles) {
+      return
+    }
+
+    const files = pendingImportFiles
+    setPendingImportFiles(null)
+    void handleImportFiles(files, backupKind)
   }
 
   return (
@@ -284,7 +357,7 @@ export function LibraryPage() {
       onDrop={(event) => {
         event.preventDefault()
         setDragging(false)
-        void handleImportFiles(event.dataTransfer.files)
+        requestBackupTypeSelection(event.dataTransfer.files)
       }}
       id="library-root"
     >
@@ -293,7 +366,7 @@ export function LibraryPage() {
         onQueryChange={setQuery}
         onBackupSelect={openImportDialog}
         onBackupDrop={(files) => {
-          void handleImportFiles(files)
+          requestBackupTypeSelection(files)
         }}
         onToggleTheme={() => setIsDarkMode((previous) => !previous)}
         isDarkMode={isDarkMode}
@@ -314,26 +387,62 @@ export function LibraryPage() {
           className="relative min-h-0 flex-1 overflow-auto p-4 md:p-6"
         >
           <div className="mb-4 flex items-center justify-between rounded-xl border border-border bg-card px-3 py-2 text-xs text-muted-foreground">
-            <span>
-              {hasActiveFilter
-                ? `${filteredDocumentsCount} von ${totalDocumentsCount} Dokumenten sichtbar`
-                : `${totalDocumentsCount} Dokumente`}
-            </span>
-            {hasActiveFilter && (
-              <button
-                type="button"
-                onClick={resetFilters}
-                className="rounded-md border border-border bg-background px-2 py-1 text-xs font-medium text-foreground transition hover:bg-muted"
+            <div className="flex items-center gap-2">
+              <span>
+                {hasActiveFilter
+                  ? `${filteredDocumentsCount} of ${totalDocumentsCount} documents visible`
+                  : `${totalDocumentsCount} documents`}
+              </span>
+              {hasActiveFilter && (
+                <button
+                  type="button"
+                  onClick={resetFilters}
+                  className="rounded-md border border-border bg-background px-2 py-1 text-xs font-medium text-foreground transition hover:bg-muted"
+                >
+                  Reset filters
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <label htmlFor="library-view-mode" className="text-xs text-muted-foreground">
+                View
+              </label>
+              <select
+                id="library-view-mode"
+                value={previewMode}
+                onChange={(event) => {
+                  const value = event.target.value
+                  setPreviewMode(value === 'a4' || value === 'original' ? value : 'default')
+                }}
+                className="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground outline-none ring-accent/40 transition focus:ring-2"
               >
-                Filter zurücksetzen
-              </button>
-            )}
+                <option value="default">Default</option>
+                <option value="a4">A4 Preview</option>
+                <option value="original">Original</option>
+              </select>
+              <label htmlFor="library-grid-size" className="text-xs text-muted-foreground">
+                Grid
+              </label>
+              <select
+                id="library-grid-size"
+                value={gridSize}
+                onChange={(event) => {
+                  const value = event.target.value
+                  setGridSize(value === 'compact' || value === 'large' ? value : 'comfortable')
+                }}
+                className="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground outline-none ring-accent/40 transition focus:ring-2"
+              >
+                <option value="compact">Compact</option>
+                <option value="comfortable">Comfortable</option>
+                <option value="large">Large</option>
+              </select>
+            </div>
           </div>
 
           {loading ? (
             <p className="text-sm text-muted-foreground">Loading library...</p>
           ) : (
-            <LibraryGrid documents={filteredDocuments} />
+            <LibraryGrid documents={filteredDocuments} previewMode={previewMode} gridSize={gridSize} />
           )}
 
           <DropzoneOverlay active={dragging} />
@@ -348,11 +457,53 @@ export function LibraryPage() {
         className="hidden"
         onChange={(event) => {
           if (event.target.files) {
-            void handleImportFiles(event.target.files)
+            requestBackupTypeSelection(event.target.files)
             event.target.value = ''
           }
         }}
       />
+
+      {pendingImportFiles && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
+          <div className="w-full max-w-md rounded-2xl border border-border bg-card p-5 shadow-2xl">
+            <h2 className="text-base font-semibold text-foreground">Choose Backup Type</h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Select which Flexcil backup format you want to import.
+            </p>
+            <div className="mt-4 grid gap-3">
+              <button
+                type="button"
+                onClick={() => confirmBackupTypeSelection('drive')}
+                className="rounded-xl border border-border bg-background px-4 py-3 text-left transition hover:bg-muted"
+              >
+                <div className="text-sm font-medium text-foreground">Google Drive Backup</div>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  Structure with ID-style filenames and documents.list mapping.
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => confirmBackupTypeSelection('manual')}
+                className="rounded-xl border border-border bg-background px-4 py-3 text-left transition hover:bg-muted"
+              >
+                <div className="text-sm font-medium text-foreground">Manual Backup</div>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  Structure from Documents folders with document names as .flx files.
+                </div>
+              </button>
+            </div>
+            <div className="mt-4 flex justify-end">
+              <button
+                type="button"
+                onClick={closeBackupTypeSelection}
+                className="rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-muted-foreground transition hover:bg-muted"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <ImportProgressPopup
         active={importProgress.active}

@@ -4,10 +4,25 @@ import { Link } from 'react-router-dom'
 import { formatBytes, formatDate } from '../lib/format'
 import type { DocumentRecord } from '../types'
 
-export function DocumentCard({ document }: { document: DocumentRecord }) {
+interface DocumentCardProps {
+  document: DocumentRecord
+  previewMode: 'default' | 'a4' | 'original'
+}
+
+export function DocumentCard({ document, previewMode }: DocumentCardProps) {
   const [thumbnailUrl, setThumbnailUrl] = useState<string | undefined>()
   const hasDrawings =
     Object.values(document.inkDrawingsByPageKey ?? {}).some((strokes) => strokes.length > 0)
+  const thumbnailContainerClass =
+    previewMode === 'original'
+      ? 'min-h-[180px] overflow-hidden bg-muted p-2'
+      : previewMode === 'a4'
+        ? 'aspect-[210/297] overflow-hidden bg-muted'
+        : 'aspect-[4/3] overflow-hidden bg-muted'
+  const thumbnailImageClass =
+    previewMode === 'original'
+      ? 'mx-auto h-auto max-h-[320px] w-full object-contain transition duration-300 group-hover:scale-[1.02]'
+      : 'h-full w-full object-cover transition duration-300 group-hover:scale-[1.02]'
 
   useEffect(() => {
     if (!document.thumbnailBlob) {
@@ -27,15 +42,15 @@ export function DocumentCard({ document }: { document: DocumentRecord }) {
         to={`/workspace?doc=${encodeURIComponent(document.id)}`}
         className="block"
       >
-        <div className="aspect-[4/3] overflow-hidden bg-muted">
+        <div className={thumbnailContainerClass}>
           {thumbnailUrl ? (
             <img
               src={thumbnailUrl}
               alt={document.title}
-              className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.02]"
+              className={thumbnailImageClass}
             />
           ) : (
-            <div className="flex h-full items-center justify-center text-muted-foreground">
+            <div className="flex h-full min-h-[120px] items-center justify-center text-muted-foreground">
               <FileText className="size-10" />
             </div>
           )}

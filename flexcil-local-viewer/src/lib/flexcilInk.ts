@@ -112,6 +112,166 @@ function computeLineWidth(scale: RawDrawingStroke['scale']): number {
   return clampLineWidth(2 * average)
 }
 
+interface PressureStats {
+  hasUsablePressure: boolean
+  pressureLooksLikeWidthMetadata: boolean
+}
+
+function analyzeStrokePressure(points: FlexcilInkPoint[]): PressureStats {
+  const rawPressures = points
+    .map((point) => point.pressure)
+    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
+
+  if (rawPressures.length < 2) {
+    return {
+      hasUsablePressure: false,
+      pressureLooksLikeWidthMetadata: false,
+    }
+  }
+
+  const minPressure = Math.min(...rawPressures)
+  const maxPressure = Math.max(...rawPressures)
+  const pressureLooksLikeWidthMetadata =
+    maxPressure <= 0.02 && maxPressure - minPressure <= 0.0035
+
+  return {
+    hasUsablePressure: rawPressures.length >= 3 && !pressureLooksLikeWidthMetadata,
+    pressureLooksLikeWidthMetadata,
+  }
+}
+
+function splitPointIndicesByPressureLift(
+  points: FlexcilInkPoint[],
+  liftThreshold = 0.05,
+): Array<{ startIndex: number; endIndex: number }> {
+  const spans: Array<{ startIndex: number; endIndex: number }> = []
+  let currentStart = -1
+
+  for (let index = 0; index < points.length; index += 1) {
+    const point = points[index]
+    const isLiftPoint =
+      typeof point.pressure === 'number' && Number.isFinite(point.pressure) && point.pressure <= liftThreshold
+
+    if (isLiftPoint) {
+      if (currentStart >= 0 && index - currentStart >= 2) {
+        spans.push({ startIndex: currentStart, endIndex: index - 1 })
+      }
+      currentStart = -1
+      continue
+    }
+
+    if (currentStart < 0) {
+      currentStart = index
+      continue
+    }
+  }
+
+  if (currentStart >= 0 && points.length - currentStart >= 2) {
+    spans.push({ startIndex: currentStart, endIndex: points.length - 1 })
+  }
+
+  return spans
+}
+
+function extractPointSpan(
+  points: FlexcilInkPoint[],
+  startIndex: number,
+  endIndex: number,
+): FlexcilInkPoint[] {
+  if (startIndex < 0 || endIndex >= points.length || endIndex - startIndex + 1 < 2) {
+    return []
+  }
+
+  return points.slice(startIndex, endIndex + 1)
+}
+
+function computeSegmentLengths(points: FlexcilInkPoint[]): number[] {
+  const lengths: number[] = []
+  for (let index = 1; index < points.length; index += 1) {
+    const previous = points[index - 1]
+    const current = points[index]
+    lengths.push(Math.hypot(current.xNorm - previous.xNorm, current.yNorm - previous.yNorm))
+  }
+  return lengths
+}
+
+function median(values: number[]): number {
+  if (values.length === 0) {
+    return 0
+  }
+
+  const sorted = [...values].sort((left, right) => left - right)
+  const middle = Math.floor(sorted.length / 2)
+  if (sorted.length % 2 === 0) {
+    return (sorted[middle - 1] + sorted[middle]) / 2
+  }
+
+  return sorted[middle]
+}
+
+function dropTrailingDuplicatePoints(points: FlexcilInkPoint[]): FlexcilInkPoint[] {
+  if (points.length < 2) {
+    return points
+  }
+
+  let endIndex = points.length - 1
+  while (endIndex > 0) {
+    const current = points[endIndex]
+    const previous = points[endIndex - 1]
+    const step = Math.hypot(current.xNorm - previous.xNorm, current.yNorm - previous.yNorm)
+    if (step > 0.0000001) {
+      break
+    }
+    endIndex -= 1
+  }
+
+  return points.slice(0, endIndex + 1)
+}
+
+function shouldTrimLeadingOutlier(points: FlexcilInkPoint[]): boolean {
+  if (points.length < 8) {
+    return false
+  }
+
+  const segmentLengths = computeSegmentLengths(points)
+  if (segmentLengths.length < 4) {
+    return false
+  }
+
+  const first = segmentLengths[0]
+  const remainder = segmentLengths.slice(1)
+  const baseline = median(remainder)
+  const maxRemainder = Math.max(...remainder)
+
+  if (first <= 0.0022) {
+    return false
+  }
+
+  const ratioToMedian = baseline > 0 ? first / baseline : Infinity
+  const ratioToMaxRemainder = maxRemainder > 0 ? first / maxRemainder : Infinity
+
+  return ratioToMedian >= 4.5 && ratioToMaxRemainder >= 1.45
+}
+
+function normalizeFreehandPoints(points: FlexcilInkPoint[]): { points: FlexcilInkPoint[]; trimmedLeading: boolean } {
+  const withoutTrailingDuplicates = dropTrailingDuplicatePoints(points)
+  if (withoutTrailingDuplicates.length < 2) {
+    return { points: withoutTrailingDuplicates, trimmedLeading: false }
+  }
+
+  if (shouldTrimLeadingOutlier(withoutTrailingDuplicates)) {
+    return {
+      points: withoutTrailingDuplicates.slice(1),
+      trimmedLeading: true,
+    }
+  }
+
+  return {
+    points: withoutTrailingDuplicates,
+    trimmedLeading: false,
+  }
+}
+
 export function decodeFlexcilPoints(base64: string, start: FlexcilStartPoint): FlexcilInkPoint[] {
   const safeStartX = Number.isFinite(start.x) ? start.x : 0
   const safeStartY = Number.isFinite(start.y) ? start.y : 0
@@ -281,22 +441,58 @@ export function parseFlexcilDrawings(raw: unknown): FlexcilInkStroke[] {
       const mode = typeof stroke.mode === 'number' ? stroke.mode : undefined
       const isGeneratedFigure = figure === 1 || mode === 1
 
-      const preferredPoints = mode === 5 ? variants.absolute : variants.auto
+      const preferredPointsRaw = mode === 5 || mode === 1 ? variants.absolute : variants.auto
+      const normalizeFreehand = mode === 1 && !isGeneratedFigure
+      const normalizedPreferred = normalizeFreehand
+        ? normalizeFreehandPoints(preferredPointsRaw)
+        : { points: preferredPointsRaw, trimmedLeading: false }
+      const preferredPoints = normalizedPreferred.points
+
       if (preferredPoints.length < 2) {
         continue
       }
 
-      strokes.push({
-        points: preferredPoints,
-        pointsAbsolute: variants.absolute,
-        pointsCumulative: variants.cumulative,
-        strokeStyle: argbToRgbaCss(typeof stroke.strokeColor === 'number' ? stroke.strokeColor : -16777216),
-        lineWidth: computeLineWidth(stroke.scale),
-        rotate: typeof stroke.rotate === 'number' ? stroke.rotate : undefined,
-        sourceFigure: figure,
-        sourceMode: mode,
-        isGeneratedFigure,
-      })
+      const variantsAbsolute = normalizeFreehand
+        ? (() => {
+            const absoluteNoDuplicates = dropTrailingDuplicatePoints(variants.absolute)
+            return normalizedPreferred.trimmedLeading ? absoluteNoDuplicates.slice(1) : absoluteNoDuplicates
+          })()
+        : variants.absolute
+
+      const variantsCumulative = normalizeFreehand
+        ? (() => {
+            const cumulativeNoDuplicates = dropTrailingDuplicatePoints(variants.cumulative)
+            return normalizedPreferred.trimmedLeading ? cumulativeNoDuplicates.slice(1) : cumulativeNoDuplicates
+          })()
+        : variants.cumulative
+
+      const pressureStats = analyzeStrokePressure(preferredPoints)
+      const shouldSplitByLift = !isGeneratedFigure && pressureStats.hasUsablePressure
+      const splitSpans = shouldSplitByLift
+        ? splitPointIndicesByPressureLift(preferredPoints)
+        : [{ startIndex: 0, endIndex: preferredPoints.length - 1 }]
+
+      for (const span of splitSpans) {
+        const points = extractPointSpan(preferredPoints, span.startIndex, span.endIndex)
+        if (points.length < 2) {
+          continue
+        }
+
+        const pointsAbsolute = extractPointSpan(variantsAbsolute, span.startIndex, span.endIndex)
+        const pointsCumulative = extractPointSpan(variantsCumulative, span.startIndex, span.endIndex)
+
+        strokes.push({
+          points,
+          pointsAbsolute: pointsAbsolute.length >= 2 ? pointsAbsolute : points,
+          pointsCumulative: pointsCumulative.length >= 2 ? pointsCumulative : points,
+          strokeStyle: argbToRgbaCss(typeof stroke.strokeColor === 'number' ? stroke.strokeColor : -16777216),
+          lineWidth: computeLineWidth(stroke.scale),
+          rotate: typeof stroke.rotate === 'number' ? stroke.rotate : undefined,
+          sourceFigure: figure,
+          sourceMode: mode,
+          isGeneratedFigure,
+        })
+      }
     } catch {
       continue
     }

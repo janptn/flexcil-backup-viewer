@@ -43,6 +43,7 @@ ToDo-List
 - 💾 IndexedDB local storage
 - 🌙 Modern dark UI
 - 🔐 100% local – no uploads, no cloud interaction
+- 🤌 Download all you PDFs in one ZIP (You can´t use this file as backup to import in the viewer.)
 
 ---
 
